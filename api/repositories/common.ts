@@ -24,12 +24,13 @@ export function findBudgetByDept(departmentId: number): Budget | undefined {
 
 export function findAvailableVehicles(startTime: string, endTime: string, carTypePreference?: string | null): Vehicle[] {
   const db = getDb();
-  const params: unknown[] = [startTime, endTime, startTime, endTime];
+  const params: unknown[] = [];
   let carTypeSql = '';
   if (carTypePreference) {
     carTypeSql = 'AND v.car_type = ?';
     params.push(carTypePreference);
   }
+  params.push(startTime, endTime);
   return db.prepare(`
     SELECT v.*,
       v.current_mileage as currentMileage,

@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 import { getDb } from '../db/index.js';
 import type { User, UserRole } from '../../shared/types.js';
 
@@ -51,7 +52,6 @@ export function createAuthRouter(): Router {
       if (!username || !password || !role) {
         return next({ status: 400, code: 'INVALID_PARAMS', message: '请填写账号、密码和角色' });
       }
-      const bcrypt = require('bcryptjs') as typeof import('bcryptjs');
       const row = db.prepare(`
         SELECT id, username, password_hash, name, role, department_id as departmentId, phone, created_at as createdAt
         FROM users WHERE username = ?

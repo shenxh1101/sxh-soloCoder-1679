@@ -1,6 +1,6 @@
 import { getDb } from '../db/index.js';
 import type { Application, Vehicle, Driver, MatchSuggestion } from '../../shared/types.js';
-import { findAvailableVehicles, findAvailableDrivers, findPricingByType, findBudgetByDept, enrichMaintenanceInfo } from './common.js';
+import { findAvailableVehicles, findAvailableDrivers, findPricingByType, findBudgetByDept, enrichMaintenanceInfo } from '../repositories/common.js';
 
 export function estimateCost(carType: string, distanceKm: number, durationMin = 60): number {
   const p = findPricingByType(carType);
@@ -131,7 +131,7 @@ export function getMaintenanceAlertVehicles(): Array<{
       (SELECT MAX(maintenance_date) FROM maintenance_records mr WHERE mr.vehicle_id = v.id) as lastMaintenanceDate
     FROM vehicles v
     WHERE v.status != 'maintenance'
-    HAVING distanceToMaintenance <= 1500
+    AND (v.last_maintenance_mileage + v.maintenance_interval - v.current_mileage) <= 1500
     ORDER BY distanceToMaintenance ASC
   `).all() as Array<Vehicle & { nextMaintenanceMileage: number; distanceToMaintenance: number; lastMaintenanceDate: string | null }>;
 

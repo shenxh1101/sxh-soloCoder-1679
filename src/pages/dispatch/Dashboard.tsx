@@ -3,33 +3,43 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api.js';
 import { useAppStore, useToast } from '../../store/appStore.js';
 import { formatMoney, vehicleStatusLabel, vehicleStatusColor, driverStatusLabel, driverStatusColor, maintenanceAlertLevelColor } from '../../lib/format.js';
-import type { Vehicle, Driver } from '../../../shared/types.js';
+import type { Vehicle } from '../../../shared/types.js';
 import { Car, Users, FileCheck, Clock, ChevronRight, AlertTriangle, UserCheck, AlertOctagon, Gauge, Star, Activity } from 'lucide-react';
 
 export default function DispatcherDashboard() {
   const navigate = useNavigate();
   const setLoading = useAppStore((s) => s.setLoading);
   const toast = useToast();
-  const [stats, setStats] = useState({ vehicles: { total: 7, inUse: 3, idle: 3, maintenance: 1 }, drivers: { total: 3, onDuty: 2, idle: 1 }, pending: { approvals: 5, dispatch: 8 }, monthlyCost: 58230 });
+  const [stats, setStats] = useState({ vehicles: {} as Record<string, number>, pendingBills: 0, maintenanceAlertCount: 0, monthlyCost: 0 });
   const [maintenanceAlerts, setMaintenanceAlerts] = useState<Array<Record<string, unknown>>>([]);
   const [recentApps, setRecentApps] = useState<Array<Record<string, unknown>>>([]);
+  const [driverList, setDriverList] = useState<Array<Record<string, unknown>>>([]);
 
   useEffect(() => {
     const load = async () => {
       try {
         setLoading(true);
         const dash = await api.dashboard.summary() as unknown as Record<string, unknown>;
-        if (dash.vehicleStats) setStats((s) => ({ ...s, vehicles: dash.vehicleStats as Record<string, number> }));
-        if (dash.driverStats) setStats((s) => ({ ...s, drivers: dash.driverStats as Record<string, number> }));
-        if (dash.monthlyCost) setStats((s) => ({ ...s, monthlyCost: dash.monthlyCost as number }));
+        const vehicleStats = (dash.vehicleStats || {}) as Record<string, number>;
+        const total = Object.values(vehicleStats).reduce((a, b) => a + b, 0);
+        setStats({
+          vehicles: { ...vehicleStats, total },
+          pendingBills: (dash.pendingBills as number) || 0,
+          maintenanceAlertCount: (dash.maintenanceAlertCount as number) || 0,
+          monthlyCost: 0,
+        });
 
         try {
-          const mv = await api.maintenance.getAlerts() as unknown as Array<Record<string, unknown>>;
+          const mv = await api.maintenance.alerts() as unknown as Array<Record<string, unknown>>;
           setMaintenanceAlerts(mv.filter((m) => m.alertLevel !== 'normal').slice(0, 5));
         } catch {}
         try {
-          const apps = await api.applications.list({ pageSize: 5 }) as unknown as { list?: Array<Record<string, unknown>> };
+          const apps = await api.applications.list({ size: 5 }) as unknown as { list?: Array<Record<string, unknown>> };
           setRecentApps(apps.list || []);
+        } catch {}
+        try {
+          const dr = await api.drivers.list() as unknown as Array<Record<string, unknown>>;
+          setDriverList(dr);
         } catch {}
         void toast;
       } finally { setLoading(false); }
@@ -38,10 +48,10 @@ export default function DispatcherDashboard() {
   }, [setLoading]);
 
   const kpis = [
-    { t: '车辆总数', n: stats.vehicles.total, s: `${stats.vehicles.inUse}在途 ${stats.vehicles.idle}空闲`, c: 'from-primary-400 to-primary-600', i: <Car className="w-6 h-6" />, go: '/dispatch/vehicles' },
-    { t: '司机总数', n: stats.drivers.total, s: `${stats.drivers.onDuty}出勤 ${stats.drivers.idle}休息`, c: 'from-accent-400 to-accent-600', i: <Users className="w-6 h-6" />, go: '/dispatch/drivers' },
-    { t: '待派车申请', n: 12, s: '需紧急处理', c: 'from-warning-400 to-warning-600', i: <Clock className="w-6 h-6" />, go: '/dispatch/dispatch' },
-    { t: '月度费用', n: formatMoney(stats.monthlyCost), s: '本月累计', c: 'from-success-400 to-success-600', i: <FileCheck className="w-6 h-6" />, go: '/finance/bills' },
+    { t: '车辆总数', n: stats.vehicles.total || 0, s: `${stats.vehicles.in_use || 0}在途 ${stats.vehicles.idle || 0}空闲`, c: 'from-primary-400 to-primary-600', i: <Car className="w-6 h-6" />, go: '/dispatch/vehicles' },
+    { t: '保养预警', n: stats.maintenanceAlertCount || 0, s: '需关注', c: 'from-warning-400 to-warning-600', i: <AlertTriangle className="w-6 h-6" />, go: '/dispatch/maintenance' },
+    { t: '待派车申请', n: recentApps.length, s: '需紧急处理', c: 'from-accent-400 to-accent-600', i: <Clock className="w-6 h-6" />, go: '/dispatch/dispatch' },
+    { t: '待审账单', n: stats.pendingBills || 0, s: '财务待处理', c: 'from-success-400 to-success-600', i: <FileCheck className="w-6 h-6" />, go: '/finance/bills' },
   ];
 
   return (
@@ -104,20 +114,21 @@ export default function DispatcherDashboard() {
             <div className="space-y-3">
               {maintenanceAlerts.map((m: Record<string, unknown>, i: number) => {
                 const level = m.alertLevel as string;
+                const v = (m.vehicle as Record<string, unknown>) || {};
                 return (
                   <div key={i} className={`p-3 rounded-xl border-2 ${level === 'danger' ? 'bg-danger-50 border-danger-300' : 'bg-warning-50 border-warning-200'}`}>
                     <div className="flex items-center justify-between mb-1">
                       <span className={`font-bold text-sm ${level === 'danger' ? 'text-danger-700' : 'text-warning-700'}`}>
                         {level === 'danger' ? <AlertOctagon className="w-4 h-4 inline mr-1" /> : <AlertTriangle className="w-4 h-4 inline mr-1" />}
-                        {m.vehiclePlateNumber as string}
+                        {v.plateNumber as string}
                       </span>
                       <span className={`tag-pill text-[10px] ${maintenanceAlertLevelColor(level)}`}>{level === 'danger' ? '需立即保养' : '即将到期'}</span>
                     </div>
                     <div className="text-[11px] text-slate-600">
-                      {m.vehicleBrand as string} {m.vehicleModel as string} · 已行驶{(m.mileage as number)?.toLocaleString()}km
+                      {v.brand as string} {v.model as string} · 已行驶{(m.currentMileage as number)?.toLocaleString()}km
                     </div>
                     <div className={`text-xs font-semibold mt-1 ${level === 'danger' ? 'text-danger-600' : 'text-warning-600'}`}>
-                      距离下次保养：{(m.milesUntilService as number)?.toLocaleString()} km
+                      距离下次保养：{(m.distanceToMaintenance as number)?.toLocaleString()} km
                     </div>
                   </div>
                 );
@@ -134,16 +145,16 @@ export default function DispatcherDashboard() {
             <button onClick={() => navigate('/dispatch/vehicles')} className="text-xs text-primary-600 hover:text-primary-800 flex items-center gap-1 font-medium">管理 <ChevronRight className="w-3 h-3" /></button>
           </div>
           <div className="space-y-3">
-            {['inUse', 'idle', 'maintenance', 'available'].map((status, i) => {
-              const count = [stats.vehicles.inUse, stats.vehicles.idle, stats.vehicles.maintenance, Math.max(0, stats.vehicles.total - stats.vehicles.inUse - stats.vehicles.idle - stats.vehicles.maintenance)][i];
-              const pct = Math.round((count / Math.max(1, stats.vehicles.total)) * 100);
+            {(['idle', 'in_use', 'maintenance', 'repair'] as const).map((status) => {
+              const count = stats.vehicles[status] || 0;
+              const pct = Math.round((count / Math.max(1, stats.vehicles.total || 1)) * 100);
               return (
                 <div key={status} className="group">
                   <div className="flex items-center justify-between text-sm mb-1">
-                    <span className="font-medium text-primary-800">{vehicleStatusLabel[status as keyof typeof vehicleStatusLabel] || status}</span>
+                    <span className="font-medium text-primary-800">{vehicleStatusLabel[status] || status}</span>
                     <span className="font-mono font-bold text-primary-900">{count} 辆 <span className="text-slate-400 text-xs">({pct}%)</span></span>
                   </div>
-                  <div className="progress-bar h-3"><div className={`progress-fill ${vehicleStatusColor[status as keyof typeof vehicleStatusColor] || 'bg-primary-500'.replace('bg-', 'bg-')}`} style={{ width: `${pct}%` }} /></div>
+                  <div className="progress-bar h-3"><div className={`progress-fill ${vehicleStatusColor[status]}`} style={{ width: `${pct}%` }} /></div>
                 </div>
               );
             })}
@@ -156,34 +167,33 @@ export default function DispatcherDashboard() {
             <button onClick={() => navigate('/dispatch/drivers')} className="text-xs text-primary-600 hover:text-primary-800 flex items-center gap-1 font-medium">管理 <ChevronRight className="w-3 h-3" /></button>
           </div>
           <div className="space-y-3">
-            {Array.from({ length: Math.min(stats.drivers.total, 3) }, (_, i) => {
-              const names = ['王建国', '李志远', '张师傅'];
-              const plateNums = ['京A·99168', '京A·33612', '京A·10086'];
-              const rating = [4.92, 4.88, 4.78];
-              const trips = [120, 98, 76];
-              const statuses: Driver['status'][] = ['on_duty', 'on_duty', 'resting'];
-              const st = statuses[i];
-              return (
-                <div key={i} className="p-3 rounded-xl border border-slate-100 hover:shadow-sm hover:border-primary-200 transition-all flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-accent-400 to-accent-600 text-white font-bold flex items-center justify-center shrink-0 text-lg">
-                    {names[i][0]}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-primary-900 text-sm">{names[i]}</span>
-                      <span className={`tag-pill text-[10px] ${driverStatusColor[st]}`}>{driverStatusLabel[st]}</span>
+            {driverList.length === 0 ? (
+              <div className="py-8 text-center text-sm text-slate-400">暂无司机</div>
+            ) : (
+              driverList.slice(0, 5).map((d, i) => {
+                const st = (d.status as string) || 'off_duty';
+                return (
+                  <div key={i} className="p-3 rounded-xl border border-slate-100 hover:shadow-sm hover:border-primary-200 transition-all flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-accent-400 to-accent-600 text-white font-bold flex items-center justify-center shrink-0 text-lg">
+                      {(d.name as string)?.slice(-1) || '?'}
                     </div>
-                    <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
-                      <span>{plateNums[i]}</span>
-                      <span>·</span>
-                      <span className="text-warning-600 flex items-center gap-0.5"><Star className="w-3 h-3" />{rating[i]}</span>
-                      <span>·</span>
-                      <span><Gauge className="w-3 h-3 inline" /> {trips[i]}次</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-primary-900 text-sm">{d.name as string}</span>
+                        <span className={`tag-pill text-[10px] ${driverStatusColor[st as keyof typeof driverStatusColor] || 'bg-slate-100 text-slate-600'}`}>{driverStatusLabel[st as keyof typeof driverStatusLabel] || st}</span>
+                      </div>
+                      <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
+                        <span>{d.phone as string}</span>
+                        <span>·</span>
+                        <span className="text-warning-600 flex items-center gap-0.5"><Star className="w-3 h-3" />{(d.avgRating as number)?.toFixed(1)}</span>
+                        <span>·</span>
+                        <span><Gauge className="w-3 h-3 inline" /> {d.totalTrips as number}次</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
         </div>
       </div>

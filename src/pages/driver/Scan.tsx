@@ -32,7 +32,7 @@ export default function ScanPage() {
     if (!activeTask || !odoStart) { toast.warning('请填写出发里程数'); return; }
     try {
       setSubmitting(true);
-      await api.driver.depart(activeTask.tripId, { odoStart: +odoStart });
+      await api.driver.depart(activeTask.tripId, +odoStart);
       toast.success('扫码出发成功！祝您一路平安');
       load();
     } catch (e) { toast.error((e as { message?: string }).message || '出发失败'); }
@@ -43,11 +43,11 @@ export default function ScanPage() {
     if (!activeTask || !odoEnd) { toast.warning('请填写到达里程数'); return; }
     try {
       setSubmitting(true);
-      const r = await api.driver.arrive(activeTask.tripId, { odoEnd: +odoEnd }) as unknown as Trip & { anomaly?: boolean; overAmount?: number };
-      if (r.mileageAnomaly) {
-        toast.warning('里程异常，已自动通知调度员进行人工核查');
+      const r = await api.driver.arrive(activeTask.tripId, +odoEnd) as unknown as { anomaly: boolean; anomalyMessage?: string; cost: { mileage: number; durationMin: number; totalCost: number } };
+      if (r.anomaly) {
+        toast.warning(r.anomalyMessage || '里程异常，已通知调度员核查');
       } else {
-        toast.success(`行程完成！费用${formatMoney(r.actualCost ?? 0)}已自动结算`);
+        toast.success(`行程完成！里程${r.cost.mileage}km，费用${formatMoney(r.cost.totalCost)}已自动结算`);
       }
       load();
     } catch (e) { toast.error((e as { message?: string }).message || '操作失败'); }

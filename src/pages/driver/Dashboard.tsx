@@ -8,10 +8,12 @@ import { Car, Clock, CheckCircle2, ListChecks, Calendar, ScanLine, ChevronRight,
 
 export default function DriverDashboard() {
   const navigate = useNavigate();
+  const user = useAppStore((s) => s.user);
   const setLoading = useAppStore((s) => s.setLoading);
   const toast = useToast();
   const [tasks, setTasks] = useState<DriverTask[]>([]);
-  const [stats, setStats] = useState({ today: 0, completed: 0, totalTrips: 0, rating: 4.9 });
+  const [stats, setStats] = useState({ today: 0, completed: 0, totalTrips: 0, rating: 0 });
+  const [driverInfo, setDriverInfo] = useState<{ name: string; avgRating: number; totalTrips: number } | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -23,7 +25,15 @@ export default function DriverDashboard() {
         ]);
         setTasks(ts as unknown as DriverTask[]);
         const ds = dash.driverStats as Record<string, number> | undefined;
-        setStats({ today: ds?.todayTasks ?? ts.length, completed: ds?.todayCompleted ?? 0, totalTrips: 327, rating: 4.87 });
+        setStats({ today: ds?.todayTasks ?? (ts as unknown as DriverTask[]).length, completed: ds?.todayCompleted ?? 0, totalTrips: 0, rating: 0 });
+        try {
+          const drivers = await api.drivers.list() as unknown as Array<Record<string, unknown>>;
+          const me = drivers.find((d) => d.userId === user?.id);
+          if (me) {
+            setDriverInfo({ name: me.name as string, avgRating: me.avgRating as number, totalTrips: me.totalTrips as number });
+            setStats((s) => ({ ...s, totalTrips: me.totalTrips as number, rating: me.avgRating as number }));
+          }
+        } catch {}
         void toast;
       } finally { setLoading(false); }
     };
@@ -143,12 +153,12 @@ export default function DriverDashboard() {
         <div className="space-y-5">
           <div className="card bg-gradient-to-br from-primary-700 to-primary-900 text-white">
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur flex items-center justify-center text-2xl font-bold">王</div>
+              <div className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur flex items-center justify-center text-2xl font-bold">{driverInfo?.name?.slice(-1) || user?.name?.slice(-1) || '?'}</div>
               <div>
-                <h3 className="text-lg font-bold">王师傅</h3>
+                <h3 className="text-lg font-bold">{driverInfo?.name || user?.name || '司机'}</h3>
                 <div className="flex items-center gap-1.5 text-xs text-warning-300 mt-1">
                   <span className="text-lg">{ratingStars(stats.rating)}</span>
-                  <span className="font-bold">{stats.rating}</span> 分 · 已服务{stats.totalTrips}次
+                  <span className="font-bold">{stats.rating.toFixed(1)}</span> 分 · 已服务{stats.totalTrips}次
                 </div>
               </div>
             </div>

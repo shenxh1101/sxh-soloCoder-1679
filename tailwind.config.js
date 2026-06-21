@@ -32,7 +32,7 @@ export default {
         },
         warning: { 500: '#ff9800', 600: '#f57c00' },
         success: { 500: '#4caf50', 600: '#388e3c' },
-        danger: { 500: '#f44336', 600: '#d32f2f' },
+        danger: { 100: '#fde8e8', 400: '#ef5350', 500: '#f44336', 600: '#d32f2f' },
         bg: { page: '#f0f4f8', card: '#ffffff', sidebar: '#1e3a5f' },
       },
       fontFamily: {

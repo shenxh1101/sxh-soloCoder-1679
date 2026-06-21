@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAppStore, useToast } from '../store/appStore.js';
-import { api } from '../lib/api.js';
-import { formatDateTime, formatMoney, applicationStatusLabel, applicationStatusColor } from '../lib/format.js';
+import { useAppStore, useToast } from '../../store/appStore.js';
+import { api } from '../../lib/api.js';
+import { formatDateTime, formatMoney, applicationStatusLabel, applicationStatusColor } from '../../lib/format.js';
 import { FilePlus, ListChecks, Clock, CheckCircle2, ChevronRight, Car, FileText } from 'lucide-react';
 
 export default function EmployeeDashboard() {

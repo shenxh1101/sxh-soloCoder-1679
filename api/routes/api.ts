@@ -89,11 +89,24 @@ export function createApiRouter(): Router {
     } catch (e) { next(e); }
   });
 
-  function matchAndDispatch(appId: number): void {
+  function matchAndDispatch(appId: number): { dispatched: boolean; reason?: string } {
     const app = findApplicationById(appId);
-    if (!app) return;
+    if (!app) return { dispatched: false, reason: '申请不存在' };
     const suggestion = matchVehicleDriver(app);
-    if (suggestion.vehicles.length === 0 || suggestion.drivers.length === 0) return;
+    if (suggestion.vehicles.length === 0 || suggestion.drivers.length === 0) {
+      db.prepare("UPDATE applications SET status = 'pending' WHERE id = ? AND status NOT IN ('dispatched','completed','cancelled')").run(appId);
+      const reason = suggestion.vehicles.length === 0 ? '当前时段无空闲车辆' : '当前时段无可用司机';
+      pushNotification(app.applicantId, 'system', '派车待分配',
+        `您的用车申请暂时无法自动派车（${reason}），已转交调度员手动分配。`,
+        'application', appId);
+      const dispatchers = db.prepare("SELECT id FROM users WHERE role = 'dispatcher'").all() as { id: number }[];
+      dispatchers.forEach(({ id }) => {
+        pushNotification(id, 'dispatch', '待手动派车',
+          `申请#${appId}自动匹配失败（${reason}），请尽快手动分配。`,
+          'application', appId);
+      });
+      return { dispatched: false, reason };
+    }
     const vehicle = suggestion.vehicles[0].vehicle;
     const driver = suggestion.drivers[0].driver;
     const carType = vehicle.carType;
@@ -118,6 +131,7 @@ export function createApiRouter(): Router {
         `${app.startTime.slice(5, 16)}  ${app.origin} → ${app.destination}，车辆：${vehicle.plateNumber}`,
         'dispatch', appId);
     }
+    return { dispatched: true };
   }
 
   router.get('/applications', authMiddleware(), (req: AuthRequest, res, next) => {
