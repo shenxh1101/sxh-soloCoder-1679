@@ -21,13 +21,14 @@ export default function EmployeeDashboard() {
           api.applications.list({ size: 5, page: 1 }),
           api.dashboard.summary(),
         ]);
-        setRecent(apps.list as Array<Record<string, unknown>>);
+        setRecent(apps.list as unknown as Array<Record<string, unknown>>);
         const es = (dash.employeeStats || {}) as Record<string, number>;
+        const cost = dash.pendingCost as number | undefined;
         setStats({
           ongoing: es.ongoing || 0,
           completed: es.completed || 0,
           total: es.total || 0,
-          pendingCost: Math.round(Math.random() * 2000) + 500,
+          pendingCost: cost ?? 0,
         });
         void toast;
       } finally {
@@ -76,7 +77,7 @@ export default function EmployeeDashboard() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-semibold text-primary-800 truncate">{r.origin as string} → {r.destination as string}</span>
                         <span className={`tag-pill ${applicationStatusColor[r.status as keyof typeof applicationStatusColor] || 'bg-slate-100'}`}>
-                          {applicationStatusLabel[r.status as keyof typeof applicationStatusLabel] || r.status}
+                          {applicationStatusLabel[r.status as keyof typeof applicationStatusLabel] || (r.status as React.ReactNode)}
                         </span>
                       </div>
                       <div className="flex items-center gap-4 mt-2 text-xs text-slate-500 flex-wrap">

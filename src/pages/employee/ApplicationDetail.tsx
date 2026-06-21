@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../../lib/api.js';
 import { useAppStore, useToast } from '../../store/appStore.js';
 import { applicationStatusLabel, applicationStatusColor, formatDateTime, formatMoney, formatDuration, carTypeLabel, billAuditStatusLabel, billAuditStatusColor, tripStatusLabel, tripStatusColor, ratingStars } from '../../lib/format.js';
-import type { Application, Rating } from '../../../shared/types.js';
+import type { Application, Rating } from '../../../shared/types';
 import { ArrowLeft, Car, User, MapPin, Clock, Calendar, CheckCircle2, AlertTriangle, Star, DollarSign, FileCheck } from 'lucide-react';
 
 export default function ApplicationDetailPage() {
@@ -31,7 +31,7 @@ export default function ApplicationDetailPage() {
             } catch { return null; }
           })(),
         ]);
-        setApp(detail as (Application & Record<string, unknown>));
+        setApp(detail as unknown as (Application & Record<string, unknown>));
         setRating(r);
       } catch (e) { toast.error((e as { message?: string }).message || '加载失败'); }
       finally { setLoading(false); }
@@ -41,9 +41,9 @@ export default function ApplicationDetailPage() {
 
   if (!app) return <div className="text-center py-12 text-slate-400">加载中...</div>;
 
-  const dispatch = app.dispatch as Record<string, unknown> | undefined;
-  const trip = dispatch?.trip as Record<string, unknown> | undefined;
-  const approval = app.approval as Record<string, unknown> | undefined;
+  const dispatch = app.dispatch as unknown as Record<string, unknown> | undefined;
+  const trip = dispatch?.trip as unknown as Record<string, unknown> | undefined;
+  const approval = app.approval as unknown as Record<string, unknown> | undefined;
   const bill = (app as unknown as { bill?: Record<string, unknown> }).bill;
   const vehicle = dispatch?.vehicle as Record<string, unknown> | undefined;
   const driver = dispatch?.driver as Record<string, unknown> | undefined;
@@ -141,7 +141,7 @@ export default function ApplicationDetailPage() {
                 <FileCheck className="w-4 h-4 text-primary-600" /> 审批信息
               </h3>
               <div className="grid grid-cols-2 gap-4 text-sm mb-3">
-                <div><div className="text-xs text-slate-500 mb-1">审批人</div><div className="font-semibold">{approval.supervisorName || '-'}</div></div>
+                <div><div className="text-xs text-slate-500 mb-1">审批人</div><div className="font-semibold">{(approval.supervisorName ?? '-') as React.ReactNode}</div></div>
                 <div><div className="text-xs text-slate-500 mb-1">审批状态</div>
                   <span className={`tag-pill ${approval.decision === 'approved' ? 'bg-success-500/15 text-success-600' : approval.decision === 'rejected' ? 'bg-danger-500/15 text-danger-600' : 'bg-warning-500/15 text-warning-600'}`}>
                     {approval.decision === 'approved' ? '审批通过' : approval.decision === 'rejected' ? '审批未通过' : '待审批'}
@@ -152,7 +152,7 @@ export default function ApplicationDetailPage() {
               </div>
               {(approval.comment || app.rejectionReason) && (
                 <div className="p-3 rounded-lg bg-slate-50 text-sm text-slate-700">
-                  💬 {approval.comment || app.rejectionReason}
+                  💬 {(approval.comment ?? app.rejectionReason ?? '') as React.ReactNode}
                 </div>
               )}
             </div>
@@ -163,41 +163,70 @@ export default function ApplicationDetailPage() {
               <h3 className="text-sm font-bold text-primary-800 flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
                 <Car className="w-4 h-4 text-primary-600" /> 派车信息
               </h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 rounded-xl bg-gradient-to-br from-primary-50 to-accent-50/50 border border-primary-100">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-12 h-12 rounded-xl bg-primary-600 text-white flex items-center justify-center shadow-md">
-                      <Car className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <div className="font-bold text-primary-900">{vehicle.plateNumber as string}</div>
-                      <div className="text-xs text-slate-500">{vehicle.brand as string} {vehicle.model as string}</div>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-xs mt-3">
-                    <div><span className="text-slate-500">车型：</span>{carTypeLabel[vehicle.carType as keyof typeof carTypeLabel]}</div>
-                    <div><span className="text-slate-500">座位：</span>{vehicle.seatingCapacity as number}座</div>
-                    <div><span className="text-slate-500">里程：</span>{(vehicle.currentMileage as number).toLocaleString()}km</div>
-                    <div><span className="text-slate-500">匹配分：</span><span className="text-accent-600 font-bold">{dispatch.matchScore as number || 85}</span></div>
-                  </div>
-                </div>
-                <div className="p-4 rounded-xl bg-gradient-to-br from-warning-500/5 to-accent-50/30 border border-warning-200/50">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-warning-400 to-warning-600 text-white flex items-center justify-center shadow-md font-bold text-lg">
-                      {(driver.name as string).slice(-2)}
-                    </div>
-                    <div>
-                      <div className="font-bold text-primary-900">{driver.name as string}</div>
-                      <div className="text-xs text-warning-600 flex items-center gap-1">
-                        <Star className="w-3 h-3 fill-warning-400" /> {driver.avgRating as number}分 · 已服务{driver.totalTrips as number}次
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="md:col-span-2 grid grid-cols-2 gap-4">
+                  <div className="p-4 rounded-xl bg-gradient-to-br from-primary-50 to-accent-50/50 border border-primary-100">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-12 h-12 rounded-xl bg-primary-600 text-white flex items-center justify-center shadow-md">
+                        <Car className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <div className="font-bold text-primary-900">{vehicle.plateNumber as string}</div>
+                        <div className="text-xs text-slate-500">{vehicle.brand as string} {vehicle.model as string}</div>
                       </div>
                     </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs mt-3">
+                      <div><span className="text-slate-500">车型：</span>{carTypeLabel[vehicle.carType as keyof typeof carTypeLabel]}</div>
+                      <div><span className="text-slate-500">座位：</span>{vehicle.seatingCapacity as number}座</div>
+                      <div><span className="text-slate-500">里程：</span>{(vehicle.currentMileage as number).toLocaleString()}km</div>
+                      <div><span className="text-slate-500">匹配分：</span><span className="text-accent-600 font-bold">{dispatch.matchScore as number || 85}</span></div>
+                    </div>
                   </div>
-                  <div className="mt-3 space-y-1.5 text-xs">
-                    <div><span className="text-slate-500">联系电话：</span><span className="font-mono">{driver.phone as string}</span></div>
-                    <div><span className="text-slate-500">驾照类型：</span>{driver.licenseType as string}</div>
+                  <div className="p-4 rounded-xl bg-gradient-to-br from-warning-500/5 to-accent-50/30 border border-warning-200/50">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-warning-400 to-warning-600 text-white flex items-center justify-center shadow-md font-bold text-lg">
+                        {(driver.name as string).slice(-2)}
+                      </div>
+                      <div>
+                        <div className="font-bold text-primary-900">{driver.name as string}</div>
+                        <div className="text-xs text-warning-600 flex items-center gap-1">
+                          <Star className="w-3 h-3 fill-warning-400" /> {driver.avgRating as number}分 · 已服务{driver.totalTrips as number}次
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-3 space-y-1.5 text-xs">
+                      <div><span className="text-slate-500">联系电话：</span><span className="font-mono">{driver.phone as string}</span></div>
+                      <div><span className="text-slate-500">驾照类型：</span>{driver.licenseType as string}</div>
+                    </div>
                   </div>
                 </div>
+                {dispatch.qrCode && (
+                  <div className="p-4 rounded-xl bg-gradient-to-br from-success-50 to-primary-50 border border-success-100 flex flex-col items-center justify-center">
+                    <div className="text-xs text-slate-500 mb-2 font-semibold flex items-center gap-1">
+                      <FileCheck className="w-3.5 h-3.5 text-success-600" /> 扫码确认
+                    </div>
+                    <div className="qr-pattern w-32 h-32 rounded-xl bg-white p-2 border-2 border-success-200 shadow-sm">
+                      <div className="w-full h-full rounded bg-white flex items-center justify-center p-1">
+                        <svg viewBox="0 0 100 100" className="w-full h-full text-slate-800">
+                          {Array.from({ length: 25 * 25 }).map((_, i) => {
+                            const hash = (dispatch.qrCode as string) + '#' + i;
+                            let h = 0;
+                            for (let j = 0; j < hash.length; j++) { h = (h * 31 + hash.charCodeAt(j)) >>> 0; }
+                            const bit = h % 3;
+                            const x = (i % 25) * 4;
+                            const y = Math.floor(i / 25) * 4;
+                            if (bit === 0) return null;
+                            return <rect key={i} x={x} y={y} width="3.5" height="3.5" fill="currentColor" rx="0.5" />;
+                          })}
+                        </svg>
+                      </div>
+                    </div>
+                    <div className="mt-2 text-xs text-slate-600 font-mono text-center">
+                      {String(app.id).padStart(8, '0')}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-400 text-center">请向司机出示此二维码</div>
+                  </div>
+                )}
               </div>
             </div>
           )}

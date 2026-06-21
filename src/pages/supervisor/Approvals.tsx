@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { api } from '../../lib/api.js';
 import { useAppStore, useToast } from '../../store/appStore.js';
 import { formatDateTime, formatMoney, applicationStatusLabel, applicationStatusColor } from '../../lib/format.js';
-import type { Approval, ApplicationStatus } from '../../../shared/types.js';
+import type { Approval, ApplicationStatus } from '../../../shared/types';
 import { ShieldCheck, CheckCircle2, XCircle, Filter, Clock, AlertTriangle, FileText, Send, X } from 'lucide-react';
 
 export default function ApprovalsPage() {
@@ -77,7 +77,7 @@ export default function ApprovalsPage() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <h4 className="text-base font-bold text-primary-900 truncate">{a.origin as string} → {a.destination as string}</h4>
                         <span className={`tag-pill ${applicationStatusColor[a.applicationStatus as ApplicationStatus] || 'bg-slate-100'}`}>
-                          {applicationStatusLabel[a.applicationStatus as ApplicationStatus] || a.applicationStatus}
+                          {applicationStatusLabel[a.applicationStatus as ApplicationStatus] || (a.applicationStatus as React.ReactNode)}
                         </span>
                       </div>
                       <div className="flex items-center gap-4 mt-1 text-xs text-slate-500 flex-wrap">

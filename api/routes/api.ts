@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { getDb } from '../db/index.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
-import type { UserRole } from '../../shared/types.js';
+import type { UserRole, Application } from '../../shared/types.js';
 import {
   estimateCost, matchVehicleDriver, validateMileage, checkBudget,
   calcActualCost, genBillNo, genQrCode, getMaintenanceAlertVehicles
@@ -209,6 +209,16 @@ export function createApiRouter(): Router {
         FROM approvals ap LEFT JOIN users u ON ap.supervisor_id = u.id WHERE ap.application_id = ?
       `).get(id);
       if (approval) (row as unknown as Record<string, unknown>).approval = approval;
+      const bill = db.prepare(`
+        SELECT b.*, b.bill_no as billNo, b.trip_id as tripId, b.department_id as departmentId,
+          b.applicant_id as applicantId, b.base_cost as baseCost, b.mileage_cost as mileageCost,
+          b.overtime_cost as overtimeCost, b.total_cost as totalCost, b.audit_status as auditStatus,
+          b.audit_user_id as auditUserId, b.audited_at as auditedAt, b.audit_comment as auditComment,
+          b.created_at as createdAt
+        FROM bills b WHERE b.trip_id IN (SELECT t.id FROM trips t JOIN dispatches d ON t.dispatch_id = d.id WHERE d.application_id = ?)
+        LIMIT 1
+      `).get(id);
+      if (bill) (row as unknown as Record<string, unknown>).bill = bill;
       res.json(json(row));
     } catch (e) { next(e); }
   });
@@ -280,7 +290,7 @@ export function createApiRouter(): Router {
   // ==================== 派车中心模块 ====================
   router.get('/dispatch/pending-applications', authMiddleware(['dispatcher', 'admin']), (_req, res, next) => {
     try {
-      const list = db.prepare(`
+      const rows = db.prepare(`
         SELECT a.*,
           a.applicant_id as applicantId, a.department_id as departmentId,
           a.estimated_distance_km as estimatedDistanceKm, a.start_time as startTime,
@@ -292,7 +302,22 @@ export function createApiRouter(): Router {
         LEFT JOIN departments d ON a.department_id = d.id
         WHERE a.status IN ('pending','approved')
         ORDER BY a.start_time ASC
-      `).all();
+      `).all() as Array<Record<string, unknown>>;
+      const list = rows.map((row) => {
+        const app = row as unknown as Application;
+        const suggestion = matchVehicleDriver(app);
+        let failReason: string | null = null;
+        if (suggestion.vehicles.length === 0 && suggestion.drivers.length === 0) {
+          failReason = '无可用车辆及司机';
+        } else if (suggestion.vehicles.length === 0) {
+          failReason = app.carTypePreference ? `无${app.carTypePreference}可用车辆` : '无空闲车辆';
+        } else if (suggestion.drivers.length === 0) {
+          failReason = '该时段无司机排班';
+        } else if (app.status === 'pending' || app.status === 'approved') {
+          failReason = '等待调度员确认';
+        }
+        return { ...row, autoDispatchFailed: !!failReason, failReason };
+      });
       res.json(json(list));
     } catch (e) { next(e); }
   });
@@ -302,7 +327,37 @@ export function createApiRouter(): Router {
       const appId = +req.params.appId;
       const app = findApplicationById(appId);
       if (!app) return next({ status: 404, code: 'NOT_FOUND', message: '申请不存在' });
-      res.json(json(matchVehicleDriver(app)));
+      const suggestion = matchVehicleDriver(app);
+      const { startTime, endTime } = app;
+      const allVehicles = db.prepare(`SELECT v.*, v.plate_number as plateNumber, v.seating_capacity as seatingCapacity, v.car_type as carType, v.current_mileage as currentMileage, v.maintenance_interval as maintenanceInterval, v.last_maintenance_mileage as lastMaintenanceMileage, v.insurance_expiry as insuranceExpiry, v.annual_inspection_expiry as annualInspectionExpiry FROM vehicles v`).all() as Array<Record<string, unknown>>;
+      const allDrivers = db.prepare(`SELECT d.* FROM drivers d`).all() as Array<Record<string, unknown>>;
+      const busyVehicles = db.prepare(`
+        SELECT DISTINCT d.vehicle_id as id FROM dispatches d JOIN applications a ON d.application_id = a.id
+        WHERE d.status IN ('assigned','in_progress') AND a.start_time < ? AND a.end_time > ?
+      `).all(endTime, startTime).map((r: { id: number }) => r.id);
+      const busyDrivers = db.prepare(`
+        SELECT DISTINCT d.driver_id as id FROM dispatches d JOIN applications a ON d.application_id = a.id
+        WHERE d.status IN ('assigned','in_progress') AND a.start_time < ? AND a.end_time > ?
+      `).all(endTime, startTime).map((r: { id: number }) => r.id);
+      const en = (id: number, ids: number[]) => ids.includes(id);
+      const enrichedVehicles = suggestion.vehicles.map(({ vehicle, score, reason }) => {
+        const conflicts: string[] = [];
+        const orig = allVehicles.find((v) => v.id === vehicle.id);
+        if (app.carTypePreference && vehicle.carType !== app.carTypePreference) conflicts.push(`车型不匹配：期望${app.carTypePreference}，实际${vehicle.carType}`);
+        if (vehicle.seatingCapacity < (app.passengers || 1)) conflicts.push(`座位不足：${vehicle.seatingCapacity}座<${app.passengers}人`);
+        if (vehicle.status === 'maintenance' || vehicle.status === 'repair') conflicts.push('车辆处于维修保养状态');
+        if (en(vehicle.id, busyVehicles)) conflicts.push('该时段已有派车任务');
+        if ((orig?.maintenanceAlertLevel as string) === 'danger') conflicts.push('即将到达保养里程');
+        return { vehicle, score, reason, conflicts, conflict: conflicts[0] || '无冲突，自动派车候选' };
+      });
+      const enrichedDrivers = suggestion.drivers.map(({ driver, score, reason }) => {
+        const conflicts: string[] = [];
+        if (driver.status !== 'on_duty') conflicts.push(`司机当前${driver.status === 'leave' ? '请假中' : '未在岗'}`);
+        if (en(driver.id, busyDrivers)) conflicts.push('该时段已有派车任务');
+        void allDrivers;
+        return { driver, score, reason, conflicts, conflict: conflicts[0] || '无冲突，自动派车候选' };
+      });
+      res.json(json({ vehicles: enrichedVehicles, drivers: enrichedDrivers }));
     } catch (e) { next(e); }
   });
 
@@ -356,12 +411,14 @@ export function createApiRouter(): Router {
           t.status, t.odometer_start as odometerStart, t.odometer_end as odometerEnd,
           t.actual_departure as actualDeparture, t.actual_arrival as actualArrival,
           t.actual_mileage as actualMileage, t.actual_duration_min as actualDurationMin,
-          t.actual_cost as actualCost
+          t.actual_cost as actualCost, t.mileage_anomaly as mileageAnomaly,
+          b.base_cost as baseCost, b.mileage_cost as mileageCost, b.overtime_cost as overtimeCost
         FROM dispatches d
         JOIN applications a ON d.application_id = a.id
         JOIN trips t ON t.dispatch_id = d.id
         LEFT JOIN users u ON a.applicant_id = u.id
         JOIN vehicles v ON d.vehicle_id = v.id
+        LEFT JOIN bills b ON b.trip_id = t.id
         WHERE d.driver_id = ? AND DATE(a.start_time) = ?
         ORDER BY a.start_time ASC
       `).all(driver.id, today);
@@ -716,17 +773,19 @@ export function createApiRouter(): Router {
     try {
       const u = req.user!;
       const q = req.query as Record<string, string>;
-      const { status, departmentId, startDate, endDate, page = '1', size = '10' } = q;
+      const { status, departmentId, startDate, endDate, month, carType, page = '1', size = '10' } = q;
       const where: string[] = []; const params: unknown[] = [];
       if (status && status !== 'all') { where.push('b.audit_status = ?'); params.push(status); }
       if (departmentId) { where.push('b.department_id = ?'); params.push(+departmentId); }
       if (u.role === 'employee') { where.push('b.applicant_id = ?'); params.push(u.id); }
       if (u.role === 'supervisor') { where.push('b.department_id = ?'); params.push(u.departmentId!); }
+      if (month) { where.push("strftime('%Y-%m', b.created_at) = ?"); params.push(month); }
       if (startDate) { where.push('DATE(b.created_at) >= ?'); params.push(startDate); }
       if (endDate) { where.push('DATE(b.created_at) <= ?'); params.push(endDate); }
+      if (carType && carType !== 'all') { where.push('v.car_type = ?'); params.push(carType); }
       const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
       const pageN = Math.max(1, +page); const sizeN = Math.min(100, +size);
-      const { cnt } = db.prepare(`SELECT COUNT(*) as cnt FROM bills b ${whereSql}`).get(...params) as { cnt: number };
+      const { cnt } = db.prepare(`SELECT COUNT(*) as cnt FROM bills b LEFT JOIN trips t ON b.trip_id = t.id LEFT JOIN dispatches dp ON t.dispatch_id = dp.id LEFT JOIN vehicles v ON dp.vehicle_id = v.id ${whereSql}`).get(...params) as { cnt: number };
       const list = db.prepare(`
         SELECT b.*, b.bill_no as billNo, b.trip_id as tripId, b.department_id as departmentId,
           b.applicant_id as applicantId, b.base_cost as baseCost, b.mileage_cost as mileageCost,
@@ -735,7 +794,7 @@ export function createApiRouter(): Router {
           b.audit_comment as auditComment, b.audited_at as auditedAt, b.created_at as createdAt,
           u.name as applicantName, d.name as departmentName,
           t.actual_mileage as actualMileage, t.actual_duration_min as actualDurationMin,
-          v.plate_number as plateNumber
+          v.plate_number as plateNumber, v.car_type as carType
         FROM bills b
         LEFT JOIN users u ON b.applicant_id = u.id
         LEFT JOIN departments d ON b.department_id = d.id
@@ -746,7 +805,148 @@ export function createApiRouter(): Router {
         ORDER BY b.created_at DESC
         LIMIT ? OFFSET ?
       `).all(...params, sizeN, (pageN - 1) * sizeN);
-      res.json(json({ list, total: cnt, page: pageN, size: sizeN }));
+      const kpi = db.prepare(`
+        SELECT
+          COUNT(*) as totalBills,
+          COALESCE(SUM(CASE WHEN b.audit_status = 'pending' THEN 1 ELSE 0 END),0) as pendingCount,
+          COALESCE(SUM(CASE WHEN b.audit_status = 'approved' THEN 1 ELSE 0 END),0) as approvedCount,
+          COALESCE(SUM(CASE WHEN b.audit_status = 'rejected' THEN 1 ELSE 0 END),0) as rejectedCount,
+          COALESCE(SUM(b.total_cost),0) as totalCost,
+          COALESCE(SUM(CASE WHEN b.audit_status = 'pending' THEN b.total_cost ELSE 0 END),0) as pendingCost,
+          COALESCE(SUM(CASE WHEN b.audit_status = 'approved' THEN b.total_cost ELSE 0 END),0) as approvedCost,
+          COALESCE(SUM(b.base_cost),0) as baseCost,
+          COALESCE(SUM(b.mileage_cost),0) as mileageCost,
+          COALESCE(SUM(b.overtime_cost),0) as overtimeCost
+        FROM bills b
+        LEFT JOIN trips t ON b.trip_id = t.id
+        LEFT JOIN dispatches dp ON t.dispatch_id = dp.id
+        LEFT JOIN vehicles v ON dp.vehicle_id = v.id
+        ${whereSql}
+      `).get(...params);
+      res.json(json({ list, total: cnt, page: pageN, size: sizeN, kpi }));
+    } catch (e) { next(e); }
+  });
+
+  router.get('/finance/bills/summary', authMiddleware(['finance', 'admin', 'supervisor']), (req: AuthRequest, res, next) => {
+    try {
+      const u = req.user!;
+      const q = req.query as Record<string, string>;
+      const { groupBy = 'department', status, departmentId, month, carType, startDate, endDate } = q;
+      const where: string[] = []; const params: unknown[] = [];
+      if (status && status !== 'all') { where.push('b.audit_status = ?'); params.push(status); }
+      if (departmentId) { where.push('b.department_id = ?'); params.push(+departmentId); }
+      if (u.role === 'supervisor') { where.push('b.department_id = ?'); params.push(u.departmentId!); }
+      if (month) { where.push("strftime('%Y-%m', b.created_at) = ?"); params.push(month); }
+      if (startDate) { where.push('DATE(b.created_at) >= ?'); params.push(startDate); }
+      if (endDate) { where.push('DATE(b.created_at) <= ?'); params.push(endDate); }
+      if (carType && carType !== 'all') { where.push('v.car_type = ?'); params.push(carType); }
+      const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
+      let labelCol = 'd.name';
+      let joinExtra = '';
+      if (groupBy === 'month') labelCol = "strftime('%Y-%m', b.created_at)";
+      else if (groupBy === 'carType') {
+        labelCol = `CASE v.car_type WHEN 'sedan' THEN '普通轿车' WHEN 'suv' THEN 'SUV' WHEN 'van' THEN '商务面包' WHEN 'business' THEN '豪华商务' ELSE '未分类' END`;
+        joinExtra = ` LEFT JOIN trips t ON b.trip_id = t.id LEFT JOIN dispatches dp ON t.dispatch_id = dp.id LEFT JOIN vehicles v ON dp.vehicle_id = v.id `;
+      }
+      if (groupBy === 'department') {
+        joinExtra = '';
+      } else if (groupBy === 'month') {
+        joinExtra = '';
+      }
+      let sql = `
+        SELECT ${labelCol} as label,
+          b.department_id as departmentId,
+          COUNT(*) as count,
+          COALESCE(SUM(b.total_cost),0) as totalCost,
+          COALESCE(AVG(b.total_cost),0) as avgCost,
+          COALESCE(SUM(b.base_cost),0) as baseCost,
+          COALESCE(SUM(b.mileage_cost),0) as mileageCost,
+          COALESCE(SUM(b.overtime_cost),0) as overtimeCost,
+          COALESCE(SUM(CASE WHEN b.audit_status = 'pending' THEN b.total_cost ELSE 0 END),0) as pendingCost,
+          COALESCE(SUM(CASE WHEN b.audit_status = 'approved' THEN b.total_cost ELSE 0 END),0) as approvedCost
+        FROM bills b
+        ${groupBy === 'department' ? 'LEFT JOIN departments d ON b.department_id = d.id' : ''}
+        ${joinExtra}
+        ${whereSql}
+        GROUP BY ${groupBy === 'department' ? 'b.department_id' : groupBy === 'month' ? "strftime('%Y-%m', b.created_at)" : 'v.car_type'}
+        ORDER BY totalCost DESC
+      `;
+      if (groupBy === 'department') {
+        sql = `
+          SELECT d.name as label,
+            b.department_id as departmentId,
+            COUNT(*) as count,
+            COALESCE(SUM(b.total_cost),0) as totalCost,
+            COALESCE(AVG(b.total_cost),0) as avgCost,
+            COALESCE(SUM(b.base_cost),0) as baseCost,
+            COALESCE(SUM(b.mileage_cost),0) as mileageCost,
+            COALESCE(SUM(b.overtime_cost),0) as overtimeCost,
+            COALESCE(SUM(CASE WHEN b.audit_status = 'pending' THEN b.total_cost ELSE 0 END),0) as pendingCost,
+            COALESCE(SUM(CASE WHEN b.audit_status = 'approved' THEN b.total_cost ELSE 0 END),0) as approvedCost
+          FROM bills b
+          LEFT JOIN departments d ON b.department_id = d.id
+          ${whereSql}
+          GROUP BY b.department_id
+          ORDER BY totalCost DESC
+        `;
+      }
+      if (groupBy === 'month') {
+        sql = `
+          SELECT strftime('%Y-%m', b.created_at) as label,
+            NULL as departmentId,
+            COUNT(*) as count,
+            COALESCE(SUM(b.total_cost),0) as totalCost,
+            COALESCE(AVG(b.total_cost),0) as avgCost,
+            COALESCE(SUM(b.base_cost),0) as baseCost,
+            COALESCE(SUM(b.mileage_cost),0) as mileageCost,
+            COALESCE(SUM(b.overtime_cost),0) as overtimeCost,
+            COALESCE(SUM(CASE WHEN b.audit_status = 'pending' THEN b.total_cost ELSE 0 END),0) as pendingCost,
+            COALESCE(SUM(CASE WHEN b.audit_status = 'approved' THEN b.total_cost ELSE 0 END),0) as approvedCost
+          FROM bills b
+          ${whereSql}
+          GROUP BY 1
+          ORDER BY 1 DESC
+        `;
+      }
+      if (groupBy === 'carType') {
+        sql = `
+          SELECT CASE v.car_type
+              WHEN 'sedan' THEN '普通轿车' WHEN 'suv' THEN 'SUV'
+              WHEN 'van' THEN '商务面包' WHEN 'business' THEN '豪华商务' ELSE '未分类' END as label,
+            NULL as departmentId,
+            COUNT(*) as count,
+            COALESCE(SUM(b.total_cost),0) as totalCost,
+            COALESCE(AVG(b.total_cost),0) as avgCost,
+            COALESCE(SUM(b.base_cost),0) as baseCost,
+            COALESCE(SUM(b.mileage_cost),0) as mileageCost,
+            COALESCE(SUM(b.overtime_cost),0) as overtimeCost,
+            COALESCE(SUM(CASE WHEN b.audit_status = 'pending' THEN b.total_cost ELSE 0 END),0) as pendingCost,
+            COALESCE(SUM(CASE WHEN b.audit_status = 'approved' THEN b.total_cost ELSE 0 END),0) as approvedCost
+          FROM bills b
+          LEFT JOIN trips t ON b.trip_id = t.id
+          LEFT JOIN dispatches dp ON t.dispatch_id = dp.id
+          LEFT JOIN vehicles v ON dp.vehicle_id = v.id
+          ${whereSql}
+          GROUP BY v.car_type
+          ORDER BY totalCost DESC
+        `;
+      }
+      const list = db.prepare(sql).all(...params);
+      const kpi = db.prepare(`
+        SELECT
+          COUNT(*) as totalBills,
+          COALESCE(SUM(b.total_cost),0) as totalCost,
+          COALESCE(SUM(CASE WHEN b.audit_status = 'pending' THEN 1 ELSE 0 END),0) as pendingCount,
+          COALESCE(SUM(CASE WHEN b.audit_status = 'approved' THEN 1 ELSE 0 END),0) as approvedCount,
+          COALESCE(SUM(CASE WHEN b.audit_status = 'pending' THEN b.total_cost ELSE 0 END),0) as pendingCost,
+          COALESCE(SUM(CASE WHEN b.audit_status = 'approved' THEN b.total_cost ELSE 0 END),0) as approvedCost
+        FROM bills b
+        LEFT JOIN trips t ON b.trip_id = t.id
+        LEFT JOIN dispatches dp ON t.dispatch_id = dp.id
+        LEFT JOIN vehicles v ON dp.vehicle_id = v.id
+        ${whereSql}
+      `).get(...params);
+      res.json(json({ list, kpi }));
     } catch (e) { next(e); }
   });
 

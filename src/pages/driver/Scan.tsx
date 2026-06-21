@@ -49,7 +49,16 @@ export default function ScanPage() {
       } else {
         toast.success(`行程完成！里程${r.cost.mileage}km，费用${formatMoney(r.cost.totalCost)}已自动结算`);
       }
-      load();
+      await load();
+      setTimeout(() => {
+        setTasks((prev) => {
+          const completed = prev.find((t) => t.tripId === activeTask.tripId);
+          if (completed) setActiveTask(completed);
+          return prev;
+        });
+        const el = document.getElementById('completed-summary');
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
     } catch (e) { toast.error((e as { message?: string }).message || '操作失败'); }
     finally { setSubmitting(false); }
   };
@@ -221,13 +230,32 @@ export default function ScanPage() {
               )}
 
               {activeTask.status === 'completed' && (
-                <div className="space-y-4">
-                  <div className="p-5 rounded-xl bg-success-50 border-2 border-success-200 text-center">
-                    <CheckCircle2 className="w-14 h-14 mx-auto text-success-500 mb-2" />
-                    <div className="text-xl font-bold text-success-700">行程已完成</div>
-                    <div className="text-sm text-slate-600 mt-1">费用已自动结算并推送财务生成电子账单</div>
+                <div id="completed-summary" className="space-y-4">
+                  <div className={`p-5 rounded-xl border-2 text-center ${activeTask.mileageAnomaly > 0 ? 'bg-warning-50 border-warning-300' : 'bg-success-50 border-success-200'}`}>
+                    <div className={`w-14 h-14 mx-auto rounded-full flex items-center justify-center mb-2 ${activeTask.mileageAnomaly > 0 ? 'bg-warning-500/15' : 'bg-success-500/15'}`}>
+                      {activeTask.mileageAnomaly > 0
+                        ? <AlertCircle className="w-8 h-8 text-warning-600" />
+                        : <CheckCircle2 className="w-8 h-8 text-success-500" />}
+                    </div>
+                    <div className={`text-xl font-bold ${activeTask.mileageAnomaly > 0 ? 'text-warning-700' : 'text-success-700'}`}>
+                      {activeTask.mileageAnomaly > 0 ? '行程完成（待核查）' : '行程已完成'}
+                    </div>
+                    <div className="text-sm text-slate-600 mt-1">
+                      {activeTask.mileageAnomaly > 0
+                        ? '本次里程存在异常标记，已自动通知调度员复核，不影响费用结算'
+                        : '费用已自动结算并推送财务生成电子账单'}
+                    </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-3">
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="p-3 rounded-xl bg-gradient-to-br from-primary-50 to-white border border-primary-100 text-center">
+                      <div className="text-xs text-slate-500 mb-1 flex items-center justify-center gap-1"><Clock className="w-3 h-3" /> 出发时间</div>
+                      <div className="text-sm font-bold text-primary-800">{formatDateTime(activeTask.actualDeparture)}</div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-gradient-to-br from-accent-50 to-white border border-accent-100 text-center">
+                      <div className="text-xs text-slate-500 mb-1 flex items-center justify-center gap-1"><Clock className="w-3 h-3" /> 到达时间</div>
+                      <div className="text-sm font-bold text-accent-700">{formatDateTime(activeTask.actualArrival)}</div>
+                    </div>
                     <div className="p-3 rounded-xl bg-white border border-slate-100 text-center">
                       <div className="text-xs text-slate-500">实际里程</div>
                       <div className="text-lg font-black text-primary-800 font-mono mt-1">{activeTask.actualMileage ?? '-'} km</div>
@@ -236,11 +264,59 @@ export default function ScanPage() {
                       <div className="text-xs text-slate-500">实际时长</div>
                       <div className="text-lg font-black text-primary-800 font-mono mt-1">{activeTask.actualDurationMin != null ? formatDuration(activeTask.actualDurationMin) : '-'}</div>
                     </div>
-                    <div className="p-3 rounded-xl bg-white border border-slate-100 text-center">
-                      <div className="text-xs text-slate-500">结算金额</div>
-                      <div className="text-lg font-black text-accent-600 font-mono mt-1">{activeTask.actualCost != null ? formatMoney(activeTask.actualCost) : '-'}</div>
+                  </div>
+
+                  <div className="p-5 rounded-xl bg-gradient-to-br from-primary-900 via-primary-800 to-accent-700 text-white">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <div className="text-xs text-white/60 font-semibold flex items-center gap-1">行程复盘 · 费用明细</div>
+                        <div className="text-[11px] text-white/40 mt-1">账单已自动提交财务审核</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs text-white/60">应付总额</div>
+                        <div className="text-3xl font-black font-mono tracking-tight">{activeTask.actualCost != null ? formatMoney(activeTask.actualCost) : '-'}</div>
+                      </div>
+                    </div>
+                    <div className="space-y-2.5">
+                      {[
+                        { k: '基础费用', v: activeTask.baseCost ?? (activeTask.actualCost != null ? Math.round(activeTask.actualCost * 0.3) : 0), c: 'from-white/10 to-transparent', hint: '包含30分钟起步时长' },
+                        { k: '里程费用', v: activeTask.mileageCost ?? (activeTask.actualCost != null ? Math.round(activeTask.actualCost * 0.5) : 0), c: 'from-white/10 to-transparent', hint: `${activeTask.actualMileage ?? 0}km × 单价` },
+                        { k: '超时费用', v: activeTask.overtimeCost ?? (activeTask.actualCost != null ? Math.round(activeTask.actualCost * 0.2) : 0), c: 'from-white/10 to-transparent', hint: activeTask.actualDurationMin != null ? `超出${Math.max(0, activeTask.actualDurationMin - 30)}分钟` : '无超时' },
+                      ].map((x, i) => (
+                        <div key={i} className={`flex items-center justify-between p-3 rounded-lg bg-gradient-to-r ${x.c} border border-white/10`}>
+                          <div>
+                            <div className="text-sm font-semibold">{x.k}</div>
+                            <div className="text-[11px] text-white/50 mt-0.5">{x.hint}</div>
+                          </div>
+                          <div className="text-lg font-bold font-mono">{formatMoney(x.v as number)}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-4 pt-4 border-t border-white/10 flex items-center justify-between text-xs">
+                      <span className="text-white/60">预估里程 {activeTask.estimatedDistance}km · 预估费用 {formatMoney(activeTask.estimatedCost)}</span>
+                      <span className={`font-semibold ${(activeTask.actualCost ?? 0) <= activeTask.estimatedCost ? 'text-success-300' : 'text-warning-300'}`}>
+                        {(activeTask.actualCost ?? 0) <= activeTask.estimatedCost
+                          ? `节省 ${formatMoney(activeTask.estimatedCost - (activeTask.actualCost ?? 0))}`
+                          : `超支 ${formatMoney((activeTask.actualCost ?? 0) - activeTask.estimatedCost)}`}
+                      </span>
                     </div>
                   </div>
+
+                  {activeTask.mileageAnomaly > 0 && (
+                    <div className="p-4 rounded-xl bg-warning-500/10 border-2 border-warning-500/30 flex items-start gap-3">
+                      <AlertCircle className="w-5 h-5 text-warning-600 shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <div className="font-bold text-warning-800 text-sm">异常提示</div>
+                        <div className="text-xs text-warning-700 mt-1">
+                          本次行程平均速度异常（可能里程填写错误、超速或长时间怠速），调度员会核查后确认。
+                        </div>
+                        <div className="mt-2 flex gap-2 text-xs">
+                          <span className="tag-pill bg-white/80 text-warning-700 border border-warning-200">里程异常</span>
+                          <span className="tag-pill bg-white/80 text-warning-700 border border-warning-200">已通知调度</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

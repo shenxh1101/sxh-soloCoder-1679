@@ -15,7 +15,7 @@ const roles: { id: UserRole; label: string; desc: string; icon: JSX.Element }[] 
 ];
 
 const demoAccounts: Record<UserRole, string> = {
-  employee: 'zhang_emp', supervisor: 'liu_sup', driver: 'driver_wang',
+  admin: 'admin', employee: 'zhang_emp', supervisor: 'liu_sup', driver: 'driver_wang',
   dispatcher: 'dispatcher_zheng', finance: 'finance_sun',
 };
 

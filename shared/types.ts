@@ -89,6 +89,8 @@ export interface Application {
   trip?: Trip;
   approval?: Approval;
   dispatch?: Dispatch;
+  estimatedCost?: number;
+  bill?: Bill;
 }
 
 export type ApprovalDecision = 'pending' | 'approved' | 'rejected';
@@ -178,6 +180,10 @@ export interface Bill {
   applicantName?: string;
   departmentName?: string;
   trip?: Trip;
+  actualMileage?: number | null;
+  actualDurationMin?: number | null;
+  plateNumber?: string | null;
+  carType?: string | null;
 }
 
 export type MaintenanceType = 'routine' | 'repair' | 'inspection' | 'other';
@@ -193,6 +199,7 @@ export interface MaintenanceRecord {
   maintenanceDate: string;
   createdAt: string;
   vehicle?: Vehicle;
+  plateNumber?: string;
 }
 
 export interface Notification {
@@ -249,8 +256,8 @@ export interface PaginatedResponse<T> {
 }
 
 export interface MatchSuggestion {
-  vehicles: Array<{ vehicle: Vehicle; score: number; reason: string }>;
-  drivers: Array<{ driver: Driver; score: number; reason: string }>;
+  vehicles: Array<{ vehicle: Vehicle; score: number; reason: string; conflicts?: string[]; conflict?: string }>;
+  drivers: Array<{ driver: Driver; score: number; reason: string; conflicts?: string[]; conflict?: string }>;
 }
 
 export interface DriverTask {
@@ -278,6 +285,10 @@ export interface DriverTask {
   actualMileage: number | null;
   actualDurationMin: number | null;
   actualCost: number | null;
+  mileageAnomaly: number;
+  baseCost: number | null;
+  mileageCost: number | null;
+  overtimeCost: number | null;
 }
 
 export interface StatisticsData {

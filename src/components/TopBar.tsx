@@ -21,7 +21,7 @@ export default function TopBar({ title, subtitle }: { title: string; subtitle?: 
     if (user) {
       api.notifications.list({ read: 'unread' }).then((r) => {
         setUnreadCount(r.unreadCount);
-        setNotifs(r.list.slice(0, 6) as Array<Record<string, unknown>>);
+        setNotifs(r.list.slice(0, 6) as unknown as Array<Record<string, unknown>>);
       }).catch(() => {});
     }
   }, [user, setUnreadCount]);

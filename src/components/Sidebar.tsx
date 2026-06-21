@@ -7,7 +7,7 @@ import { useLocation, useNavigate, NavLink } from 'react-router-dom';
 import { useAppStore } from '../store/appStore.js';
 import { useMemo } from 'react';
 import { roleLabel } from '../lib/format.js';
-import type { UserRole } from '../../../shared/types.js';
+import type { UserRole } from '../../shared/types';
 
 const navItems: Record<UserRole, Array<{ to: string; label: string; icon: JSX.Element }>> = {
   admin: [

@@ -110,7 +110,7 @@ export default function FinanceDashboard() {
                     </div>
                     <div className="text-right shrink-0">
                       <div className="text-lg font-black text-primary-800 font-mono">{formatMoney(b.totalCost as number)}</div>
-                      <span className={`tag-pill text-[10px] ${statusColors[b.auditStatus as string] || ''}`}>{statusLabels[b.auditStatus as string] || b.auditStatus}</span>
+                      <span className={`tag-pill text-[10px] ${statusColors[b.auditStatus as string] || ''}`}>{statusLabels[b.auditStatus as string] || (b.auditStatus as React.ReactNode)}</span>
                     </div>
                   </div>
                 );

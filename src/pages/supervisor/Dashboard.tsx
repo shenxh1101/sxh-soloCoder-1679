@@ -64,7 +64,7 @@ export default function SupervisorDashboard() {
           }));
         }
         if (user?.departmentId) {
-          try { setBudget(await api.budgets.get(user.departmentId) as Record<string, unknown> | null); } catch {}
+          try { setBudget(await api.budgets.get(user.departmentId) as unknown as Record<string, unknown> | null); } catch {}
         }
         try {
           const monthlyRes = await api.finance.statistics({ type: 'monthly' }) as unknown as { data: Array<{ label: string; value: number }> };

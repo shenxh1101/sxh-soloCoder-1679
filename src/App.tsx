@@ -55,6 +55,7 @@ export default function App() {
           <Route path="employee/dashboard" element={<EmployeeDashboard />} />
           <Route path="employee/apply" element={<ApplyPage />} />
           <Route path="employee/applications" element={<ApplicationsPage />} />
+          <Route path="employee/application/:id" element={<ApplicationDetailPage />} />
           <Route path="employee/applications/:id" element={<ApplicationDetailPage />} />
           <Route path="employee/rating/:tripId" element={<RatingPage />} />
 
