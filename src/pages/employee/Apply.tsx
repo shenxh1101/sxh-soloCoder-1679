@@ -71,7 +71,13 @@ export default function ApplyPage() {
         ...form, estimatedDistanceKm: 30,
         carTypePreference: form.carTypePreference || null,
       });
-      toast.success(`申请提交成功！${res.needApproval ? '等待主管审批' : '系统正在派车'}`);
+      if (res.needApproval) {
+        toast.success('申请提交成功！等待主管审批');
+      } else if ((res as Record<string, unknown>).dispatched) {
+        toast.success('申请提交成功！已自动派车，请查看详情');
+      } else {
+        toast.warning('申请已提交，但暂无可用车辆或司机，已转调度员手动分配');
+      }
       setTimeout(() => navigate(`/employee/application/${res.id}`), 800);
     } catch (e: unknown) {
       const err = e as { message?: string; code?: string };

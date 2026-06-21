@@ -3,7 +3,7 @@ import { api } from '../../lib/api.js';
 import { useAppStore, useToast } from '../../store/appStore.js';
 import { formatDateTime, formatDuration, formatMoney, tripStatusLabel, tripStatusColor } from '../../lib/format.js';
 import type { DriverTask, Trip } from '../../../shared/types.js';
-import { ScanLine, QrCode, Car, MapPin, User, Phone, Play, LogOut, Clock, AlertCircle, Gauge, CheckCircle2, ChevronDown } from 'lucide-react';
+import { ScanLine, QrCode, Car, MapPin, User, Phone, Play, LogOut, Clock, AlertCircle, Gauge, CheckCircle2, ChevronDown, List } from 'lucide-react';
 
 export default function ScanPage() {
   const setLoading = useAppStore((s) => s.setLoading);
@@ -230,15 +230,15 @@ export default function ScanPage() {
                   <div className="grid grid-cols-3 gap-3">
                     <div className="p-3 rounded-xl bg-white border border-slate-100 text-center">
                       <div className="text-xs text-slate-500">实际里程</div>
-                      <div className="text-lg font-black text-primary-800 font-mono mt-1">{activeTask.actualMileage || (activeTask as unknown as Record<string, unknown>).mileage || '-'} km</div>
+                      <div className="text-lg font-black text-primary-800 font-mono mt-1">{activeTask.actualMileage ?? '-'} km</div>
                     </div>
                     <div className="p-3 rounded-xl bg-white border border-slate-100 text-center">
                       <div className="text-xs text-slate-500">实际时长</div>
-                      <div className="text-lg font-black text-primary-800 font-mono mt-1">{formatDuration(((activeTask.actualDuration || 0) as number) || 0)}</div>
+                      <div className="text-lg font-black text-primary-800 font-mono mt-1">{activeTask.actualDurationMin != null ? formatDuration(activeTask.actualDurationMin) : '-'}</div>
                     </div>
                     <div className="p-3 rounded-xl bg-white border border-slate-100 text-center">
                       <div className="text-xs text-slate-500">结算金额</div>
-                      <div className="text-lg font-black text-accent-600 font-mono mt-1">{formatMoney(activeTask.actualCost ?? 0)}</div>
+                      <div className="text-lg font-black text-accent-600 font-mono mt-1">{activeTask.actualCost != null ? formatMoney(activeTask.actualCost) : '-'}</div>
                     </div>
                   </div>
                 </div>
@@ -256,6 +256,3 @@ export default function ScanPage() {
   );
 }
 
-function List(props: { className?: string }) {
-  return (<svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></svg>);
-}

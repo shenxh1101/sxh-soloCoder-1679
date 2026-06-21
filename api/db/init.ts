@@ -366,6 +366,27 @@ function seedInitialData(db: Database.Database): void {
       (11, 'maintenance', '保养提醒：京D·11111', '车辆京D·11111当前里程56700km，距离下次保养仅剩3300km，请尽快安排保养。', 'vehicle', 7, 0, ?)`).run(
       daysAgo(0, 0, 30), daysAgo(0, 2)
     );
+
+    const scheduleDate = (offset: number) => {
+      const dt = new Date();
+      dt.setDate(dt.getDate() + offset);
+      return dt.toISOString().slice(0, 10);
+    };
+    db.prepare(`INSERT OR IGNORE INTO schedules (driver_id, schedule_date, shift_type, status) VALUES
+      (1, ?, 'full', 'active'),
+      (2, ?, 'full', 'active'),
+      (3, ?, 'full', 'active'),
+      (1, ?, 'full', 'active'),
+      (2, ?, 'full', 'active'),
+      (3, ?, 'full', 'active'),
+      (1, ?, 'full', 'active'),
+      (2, ?, 'full', 'active'),
+      (3, ?, 'full', 'active')
+    `).run(
+      scheduleDate(0), scheduleDate(0), scheduleDate(0),
+      scheduleDate(1), scheduleDate(1), scheduleDate(1),
+      scheduleDate(2), scheduleDate(2), scheduleDate(2)
+    );
   });
 
   insert();

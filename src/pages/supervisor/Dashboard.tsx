@@ -8,40 +8,72 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line
 } from 'recharts';
 
+interface ApprovalRow {
+  id: number;
+  application_id: number;
+  estimated_cost: number;
+  over_amount: number;
+  decision: string;
+  origin: string;
+  destination: string;
+  startTime: string;
+  applicantName: string;
+  applicationStatus: string;
+}
+
 export default function SupervisorDashboard() {
   const navigate = useNavigate();
   const user = useAppStore((s) => s.user);
   const setLoading = useAppStore((s) => s.setLoading);
   const toast = useToast();
 
-  const [pending, setPending] = useState<unknown[]>([]);
+  const [pending, setPending] = useState<ApprovalRow[]>([]);
   const [summary, setSummary] = useState({ pendingApprovals: 0, approved: 0, rejected: 0, total: 0 });
   const [budget, setBudget] = useState<Record<string, unknown> | null>(null);
-  const [stats, setStats] = useState<Record<string, unknown>>({});
+  const [monthlyData, setMonthlyData] = useState<Array<{ label: string; value: number }>>([]);
+  const [deptData, setDeptData] = useState<Array<{ label: string; value: number }>>([]);
 
   useEffect(() => {
     const load = async () => {
       try {
         setLoading(true);
-        const [apps, dash] = await Promise.all([
-          api.approvals.list({ status: 'pending' }),
+        const [allPending, allApproved, allRejected, dash] = await Promise.all([
+          api.approvals.list({ status: 'pending' }) as unknown as ApprovalRow[],
+          api.approvals.list({ status: 'approved' }) as unknown as ApprovalRow[],
+          api.approvals.list({ status: 'rejected' }) as unknown as ApprovalRow[],
           api.dashboard.summary(),
         ]);
-        setPending(apps.slice(0, 5));
+        const pList = allPending || [];
+        const aList = allApproved || [];
+        const rList = allRejected || [];
+        setPending(pList.slice(0, 5));
+        setSummary({
+          pendingApprovals: pList.length,
+          approved: aList.length,
+          rejected: rList.length,
+          total: pList.length + aList.length + rList.length,
+        });
         const ss = dash.supervisorStats as Record<string, number> | undefined;
-        setSummary({ pendingApprovals: ss?.pendingApprovals ?? apps.length, approved: Math.floor(Math.random() * 20) + 5, rejected: 2, total: apps.length + 30 });
+        if (ss) {
+          setSummary(prev => ({
+            ...prev,
+            pendingApprovals: ss.pendingApprovals ?? prev.pendingApprovals,
+            approved: ss.approved ?? prev.approved,
+            rejected: ss.rejected ?? prev.rejected,
+            total: ss.total ?? prev.total,
+          }));
+        }
         if (user?.departmentId) {
           try { setBudget(await api.budgets.get(user.departmentId) as Record<string, unknown> | null); } catch {}
         }
-        // mock chart data
-        setStats({
-          monthly: Array.from({ length: 6 }, (_, i) => ({ month: `${i + 1}月`, 次数: Math.floor(Math.random() * 30) + 10, 费用: Math.floor(Math.random() * 30000) + 5000 })),
-          byEmployee: [
-            { name: '张三', value: 35 }, { name: '李四', value: 28 }, { name: '王五', value: 22 },
-            { name: '赵六', value: 18 }, { name: '其他人', value: 17 },
-          ],
-          usage: Array.from({ length: 7 }, (_, i) => ({ day: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][i], 用车: Math.floor(Math.random() * 15) + 2 })),
-        });
+        try {
+          const monthlyRes = await api.finance.statistics({ type: 'monthly' }) as unknown as { data: Array<{ label: string; value: number }> };
+          setMonthlyData((monthlyRes.data || []).map((d) => ({ label: d.label?.slice(5) || d.label, value: d.value })));
+        } catch {}
+        try {
+          const deptRes = await api.finance.statistics({ type: 'department' }) as unknown as { data: Array<{ label: string; value: number }> };
+          setDeptData(deptRes.data || []);
+        } catch {}
         void toast;
       } finally { setLoading(false); }
     };
@@ -110,18 +142,18 @@ export default function SupervisorDashboard() {
             </button>
           </div>
           {pending.length === 0 ? (
-            <div className="py-12 text-center text-sm text-slate-400">暂无待审批事项 🎉</div>
+            <div className="py-12 text-center text-sm text-slate-400">暂无待审批事项</div>
           ) : (
             <div className="space-y-3">
-              {(pending as Array<Record<string, unknown>>).map((a) => (
-                <div key={a.application_id as number} onClick={() => navigate('/supervisor/approvals')} className="p-3 rounded-xl border border-slate-100 hover:shadow-md hover:border-warning-200 transition-all cursor-pointer">
+              {pending.map((a) => (
+                <div key={a.id} onClick={() => navigate('/supervisor/approvals')} className="p-3 rounded-xl border border-slate-100 hover:shadow-md hover:border-warning-200 transition-all cursor-pointer">
                   <div className="flex items-start justify-between gap-2 mb-2">
-                    <div className="font-semibold text-sm text-primary-800 truncate">{a.origin as string} → {a.destination as string}</div>
-                    <span className="tag-pill bg-danger-500/15 text-danger-600 shrink-0">超¥{(a.overAmount as number).toFixed(0)}</span>
+                    <div className="font-semibold text-sm text-primary-800 truncate">{a.origin} → {a.destination}</div>
+                    {a.over_amount > 0 && <span className="tag-pill bg-danger-500/15 text-danger-600 shrink-0">超¥{a.over_amount.toFixed(0)}</span>}
                   </div>
                   <div className="flex items-center justify-between text-xs text-slate-500 flex-wrap gap-2">
-                    <span>{a.applicantName as string} · {formatDateTime(a.startTime as string)}</span>
-                    <span className="font-mono font-bold text-primary-700">{formatMoney(a.estimatedCost as number)}</span>
+                    <span>{a.applicantName} · {formatDateTime(a.startTime)}</span>
+                    <span className="font-mono font-bold text-primary-700">{formatMoney(a.estimated_cost)}</span>
                   </div>
                 </div>
               ))}
@@ -131,51 +163,38 @@ export default function SupervisorDashboard() {
 
         <div className="card">
           <h3 className="text-base font-bold text-primary-800 mb-4 flex items-center gap-2">
-            <Users className="w-5 h-5 text-primary-600" /> 部门用车人数分布
+            <Users className="w-5 h-5 text-primary-600" /> 部门费用分布
           </h3>
           <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={(stats.byEmployee as Array<Record<string, unknown>>) || []} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
-                  {Array.from({ length: 5 }).map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
+            {deptData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={deptData} dataKey="value" nameKey="label" cx="50%" cy="50%" outerRadius={80} label={({ label, percent }) => `${label} ${(percent * 100).toFixed(0)}%`}>
+                    {deptData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip formatter={(v: number) => formatMoney(v)} />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : <div className="h-full flex items-center justify-center text-sm text-slate-400">暂无数据</div>}
           </div>
         </div>
 
-        <div className="card">
+        <div className="card lg:col-span-2">
           <h3 className="text-base font-bold text-primary-800 mb-4 flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-accent-500" /> 月度用车费用趋势
+            <TrendingUp className="w-5 h-5 text-accent-500" /> 月度费用趋势
           </h3>
           <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={(stats.monthly as Array<Record<string, unknown>>) || []}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#eef4fb" />
-                <XAxis dataKey="month" stroke="#94a3b8" fontSize={12} />
-                <YAxis stroke="#94a3b8" fontSize={12} />
-                <Tooltip />
-                <Line type="monotone" dataKey="费用" stroke="#00bcd4" strokeWidth={3} dot={{ r: 5, fill: '#00bcd4' }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        <div className="card">
-          <h3 className="text-base font-bold text-primary-800 mb-4 flex items-center gap-2">
-            <BarChart as="svg" className="w-5 h-5 text-primary-600" /> 周用车次数统计
-          </h3>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={(stats.usage as Array<Record<string, unknown>>) || []}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#eef4fb" />
-                <XAxis dataKey="day" stroke="#94a3b8" fontSize={12} />
-                <YAxis stroke="#94a3b8" fontSize={12} />
-                <Tooltip />
-                <Bar dataKey="用车" fill="#2e63a6" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            {monthlyData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={monthlyData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#eef4fb" />
+                  <XAxis dataKey="label" stroke="#94a3b8" fontSize={12} />
+                  <YAxis stroke="#94a3b8" fontSize={12} tickFormatter={(v: number) => `¥${(v / 1000).toFixed(0)}k`} />
+                  <Tooltip formatter={(v: number) => formatMoney(v)} />
+                  <Bar dataKey="value" fill="#2e63a6" radius={[6, 6, 0, 0]} name="费用" />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : <div className="h-full flex items-center justify-center text-sm text-slate-400">暂无数据</div>}
           </div>
         </div>
       </div>

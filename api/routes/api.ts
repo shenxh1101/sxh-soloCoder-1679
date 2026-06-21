@@ -79,13 +79,17 @@ export function createApiRouter(): Router {
               `${u.name}申请${startTime.slice(5, 16)}用车，预估费用¥${estCost}，${budgetCheck.overAmount > 0 ? `超出预算¥${budgetCheck.overAmount}` : `预算使用率${budgetCheck.usedPercent}%`}，请及时审批。`,
               'application', appId);
           }
-        } else {
-          matchAndDispatch(appId);
         }
-        return { id: appId, needApproval, estimatedCost: estCost, budgetCheck };
+        return appId;
       });
-      const result = tx();
-      res.json(json(result));
+      const appId = tx();
+
+      if (!needApproval) {
+        const dispatchResult = matchAndDispatch(appId);
+        res.json(json({ id: appId, needApproval, estimatedCost: estCost, budgetCheck, dispatched: dispatchResult.dispatched, dispatchReason: dispatchResult.reason }));
+      } else {
+        res.json(json({ id: appId, needApproval, estimatedCost: estCost, budgetCheck }));
+      }
     } catch (e) { next(e); }
   });
 
@@ -346,11 +350,13 @@ export function createApiRouter(): Router {
           t.id as tripId, d.id as dispatchId, a.id as applicationId,
           d.qr_code as qrCode, a.origin, a.destination,
           a.start_time as startTime, a.end_time as endTime, a.passengers,
-          d.estimated_cost as estimatedCost,
+          a.estimated_distance_km as estimatedDistance, d.estimated_cost as estimatedCost,
           u.name as applicantName, u.phone as applicantPhone,
           v.plate_number as vehiclePlateNumber, v.brand as vehicleBrand, v.model as vehicleModel,
           t.status, t.odometer_start as odometerStart, t.odometer_end as odometerEnd,
-          t.actual_departure as actualDeparture, t.actual_arrival as actualArrival
+          t.actual_departure as actualDeparture, t.actual_arrival as actualArrival,
+          t.actual_mileage as actualMileage, t.actual_duration_min as actualDurationMin,
+          t.actual_cost as actualCost
         FROM dispatches d
         JOIN applications a ON d.application_id = a.id
         JOIN trips t ON t.dispatch_id = d.id

@@ -263,6 +263,7 @@ export interface DriverTask {
   startTime: string;
   endTime: string;
   passengers: number;
+  estimatedDistance: number;
   estimatedCost: number;
   applicantName: string;
   applicantPhone: string | null;
@@ -274,6 +275,9 @@ export interface DriverTask {
   odometerEnd: number | null;
   actualDeparture: string | null;
   actualArrival: string | null;
+  actualMileage: number | null;
+  actualDurationMin: number | null;
+  actualCost: number | null;
 }
 
 export interface StatisticsData {
