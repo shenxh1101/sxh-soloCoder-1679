@@ -3,7 +3,7 @@ import { api } from '../../lib/api.js';
 import { useAppStore, useToast } from '../../store/appStore.js';
 import { formatDateTime, formatMoney, applicationStatusLabel, applicationStatusColor, vehicleStatusLabel, vehicleStatusColor, driverStatusLabel, driverStatusColor, carTypeLabel } from '../../lib/format.js';
 import type { Application, MatchSuggestion } from '../../../shared/types.js';
-import { FilePlus, Search, Zap, Car, Users, ChevronRight, CheckCircle2, Star, AlertTriangle, AlertOctagon, Clock, ShieldCheck, Target, Ban } from 'lucide-react';
+import { FilePlus, Search, Zap, Car, Users, ChevronRight, CheckCircle2, Star, AlertTriangle, AlertOctagon, Clock, ShieldCheck, Target, Ban, RefreshCw, Calendar, Gauge } from 'lucide-react';
 
 type PendingRow = Application & { autoDispatchFailed?: boolean; failReason?: string };
 
@@ -16,6 +16,11 @@ export default function DispatchCenter() {
   const [selVehicleId, setSelVehicleId] = useState<number | null>(null);
   const [selDriverId, setSelDriverId] = useState<number | null>(null);
   const [assigning, setAssigning] = useState(false);
+  const [adjustStartTime, setAdjustStartTime] = useState('');
+  const [adjustEndTime, setAdjustEndTime] = useState('');
+  const [adjustCarType, setAdjustCarType] = useState('');
+  const [showTimeline, setShowTimeline] = useState(false);
+  const [timelineType, setTimelineType] = useState<'vehicle' | 'driver'>('vehicle');
 
   const load = async () => {
     try {
@@ -28,20 +33,40 @@ export default function DispatchCenter() {
 
   useEffect(() => { load(); }, []);
 
-  const suggest = async (app: PendingRow) => {
+  const suggest = async (app: PendingRow, customParams?: { startTime?: string; endTime?: string; carType?: string }) => {
     setSelected(app);
     setSelVehicleId(null);
     setSelDriverId(null);
+    const startTime = customParams?.startTime || app.startTime;
+    const endTime = customParams?.endTime || app.endTime;
+    const carType = customParams?.carType || app.carTypePreference || '';
+    setAdjustStartTime(startTime.slice(0, 16));
+    setAdjustEndTime(endTime.slice(0, 16));
+    setAdjustCarType(carType || '');
     try {
       setLoading(true);
-      const r = await api.dispatch.suggest(app.id);
+      const params: Record<string, unknown> = {};
+      if (customParams?.startTime) params.startTime = customParams.startTime;
+      if (customParams?.endTime) params.endTime = customParams.endTime;
+      if (customParams?.carType) params.carType = customParams.carType;
+      const r = await (api.dispatch.suggest as (id: number, params?: Record<string, unknown>) => Promise<MatchSuggestion & Record<string, unknown>>)(app.id, params);
       setSuggestion(r as unknown as MatchSuggestion);
-      const vs = (r as MatchSuggestion).vehicles;
-      const ds = (r as MatchSuggestion).drivers;
-      if (vs.length) setSelVehicleId(vs[0].vehicle.id);
-      if (ds.length) setSelDriverId(ds[0].driver.id);
+      const vs = (r as Record<string, unknown>).vehicles as Array<Record<string, unknown>> || [];
+      const ds = (r as Record<string, unknown>).drivers as Array<Record<string, unknown>> || [];
+      if (vs.length) setSelVehicleId((vs[0].vehicle as Record<string, unknown>).id as number);
+      if (ds.length) setSelDriverId((ds[0].driver as Record<string, unknown>).id as number);
     } catch (e) { toast.error((e as { message?: string }).message || '匹配失败'); }
     finally { setLoading(false); }
+  };
+
+  const handleAdjust = () => {
+    if (!selected) return;
+    suggest(selected, {
+      startTime: adjustStartTime ? new Date(adjustStartTime).toISOString() : undefined,
+      endTime: adjustEndTime ? new Date(adjustEndTime).toISOString() : undefined,
+      carType: adjustCarType || undefined,
+    });
+    toast.success('已根据新条件重新匹配车辆和司机');
   };
 
   const assign = async (appId: number, vehicleId: number, driverId: number) => {
@@ -139,8 +164,50 @@ export default function DispatchCenter() {
                 </div>
               </div>
 
+              <div className="card bg-gradient-to-br from-primary-50/50 to-accent-50/30 border-primary-100">
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                  <h3 className="text-sm font-bold text-primary-800 flex items-center gap-2">
+                    <Zap className="w-4 h-4 text-accent-500" /> 调度调整 · 冲突复核
+                  </h3>
+                  <div className="flex items-center gap-1 rounded-lg bg-white p-1 border border-primary-100">
+                    <button onClick={() => setShowTimeline(false)} className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${!showTimeline ? 'bg-primary-600 text-white shadow-sm' : 'text-slate-500 hover:text-primary-600'}`}>
+                      推荐结果
+                    </button>
+                    <button onClick={() => setShowTimeline(true)} className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${showTimeline ? 'bg-primary-600 text-white shadow-sm' : 'text-slate-500 hover:text-primary-600'}`}>
+                      占用时间线
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-[11px] text-slate-500 mb-1 block">出发时间</label>
+                    <input type="datetime-local" value={adjustStartTime} onChange={(e) => setAdjustStartTime(e.target.value)} className="input text-xs !py-2" />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-slate-500 mb-1 block">返回时间</label>
+                    <input type="datetime-local" value={adjustEndTime} onChange={(e) => setAdjustEndTime(e.target.value)} className="input text-xs !py-2" />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-slate-500 mb-1 block">车型偏好</label>
+                    <select value={adjustCarType} onChange={(e) => setAdjustCarType(e.target.value)} className="input text-xs !py-2">
+                      <option value="">不限车型</option>
+                      {(['sedan', 'suv', 'van', 'business'] as const).map((t) => (
+                        <option key={t} value={t}>{carTypeLabel[t]}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="mt-3 flex justify-end">
+                  <button onClick={handleAdjust} className="btn-primary text-xs !py-2 flex items-center gap-1.5">
+                    <RefreshCw className="w-3.5 h-3.5" /> 重新匹配
+                  </button>
+                </div>
+              </div>
+
               {suggestion && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <>
+                  {!showTimeline ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div className="card">
                     <h3 className="text-sm font-bold text-primary-800 mb-3 flex items-center gap-2"><Car className="w-4 h-4 text-primary-600" /> 候选车辆</h3>
                     {suggestion.vehicles.length === 0 ? (
@@ -241,7 +308,121 @@ export default function DispatchCenter() {
                       </div>
                     )}
                   </div>
-                </div>
+                    </div>
+                  ) : (
+                    <div className="card">
+                      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                        <h3 className="text-sm font-bold text-primary-800 flex items-center gap-2">
+                          <Calendar className="w-4 h-4 text-accent-500" /> 占用时间线
+                        </h3>
+                        <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
+                          <button onClick={() => setTimelineType('vehicle')} className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${timelineType === 'vehicle' ? 'bg-white shadow text-primary-700' : 'text-slate-500 hover:text-primary-600'}`}>
+                            <Car className="w-3.5 h-3.5 inline mr-1" /> 车辆
+                          </button>
+                          <button onClick={() => setTimelineType('driver')} className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${timelineType === 'driver' ? 'bg-white shadow text-primary-700' : 'text-slate-500 hover:text-primary-600'}`}>
+                            <Users className="w-3.5 h-3.5 inline mr-1" /> 司机
+                          </button>
+                        </div>
+                      </div>
+                      <div className="text-[11px] text-slate-500 mb-3 flex items-center gap-2">
+                        <Clock className="w-3 h-3" />
+                        当前查看时段：{adjustStartTime?.slice(0, 16).replace('T', ' ')} ~ {adjustEndTime?.slice(0, 16).replace('T', ' ')}
+                        <span className="ml-auto text-accent-600 font-medium">黄色高亮 = 与当前申请时段冲突</span>
+                      </div>
+                      <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+                        {timelineType === 'vehicle'
+                          ? ((suggestion as unknown as Record<string, unknown>).vehicleTimeline as Array<Record<string, unknown>> || []).map((item: Record<string, unknown>, i: number) => {
+                              const v = item.vehicle as Record<string, unknown>;
+                              const trips = item.trips as Array<Record<string, unknown>> || [];
+                              const hasConflict = item.hasConflict as boolean;
+                              return (
+                                <div key={i} className={`p-3 rounded-xl border transition-all ${hasConflict ? 'border-warning-200 bg-warning-50/30' : 'border-slate-100 bg-white'}`}>
+                                  <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-bold text-primary-900 text-sm">{v.plateNumber as string}</span>
+                                      <span className="text-[10px] text-slate-400">{carTypeLabel[v.carType as keyof typeof carTypeLabel]} · {v.seatingCapacity as number}座</span>
+                                    </div>
+                                    <span className={`tag-pill ${vehicleStatusColor[v.status as keyof typeof vehicleStatusColor]} text-[10px]`}>{vehicleStatusLabel[v.status as keyof typeof vehicleStatusLabel]}</span>
+                                  </div>
+                                  {trips.length === 0 ? (
+                                    <div className="text-[11px] text-success-600 flex items-center gap-1">
+                                      <CheckCircle2 className="w-3 h-3" /> 今日全天空闲
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-1.5">
+                                      {trips.slice(0, 4).map((trip: Record<string, unknown>, ti: number) => {
+                                        const tripStart = trip.startTime as string;
+                                        const tripEnd = trip.endTime as string;
+                                        const curStart = adjustStartTime ? new Date(adjustStartTime).getTime() : 0;
+                                        const curEnd = adjustEndTime ? new Date(adjustEndTime).getTime() : 0;
+                                        const ts = new Date(tripStart).getTime();
+                                        const te = new Date(tripEnd).getTime();
+                                        const conflict = ts < curEnd && te > curStart;
+                                        return (
+                                          <div key={ti} className={`text-[11px] p-2 rounded-lg flex items-center gap-2 ${conflict ? 'bg-warning-500/15 border border-warning-300/40 text-warning-800' : 'bg-slate-50 text-slate-600'}`}>
+                                            <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${conflict ? 'bg-warning-500' : 'bg-primary-400'}`} />
+                                            <span className="font-mono shrink-0">{tripStart.slice(11, 16)}-{tripEnd.slice(11, 16)}</span>
+                                            <span className="truncate flex-1">{trip.origin as string} → {trip.destination as string}</span>
+                                            {conflict && <span className="shrink-0 text-warning-700 font-semibold">冲突</span>}
+                                          </div>
+                                        );
+                                      })}
+                                      {trips.length > 4 && (
+                                        <div className="text-[10px] text-slate-400 text-center">还有 {trips.length - 4} 个任务...</div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })
+                          : ((suggestion as unknown as Record<string, unknown>).driverTimeline as Array<Record<string, unknown>> || []).map((item: Record<string, unknown>, i: number) => {
+                              const d = item.driver as Record<string, unknown>;
+                              const trips = item.trips as Array<Record<string, unknown>> || [];
+                              const hasConflict = item.hasConflict as boolean;
+                              return (
+                                <div key={i} className={`p-3 rounded-xl border transition-all ${hasConflict ? 'border-warning-200 bg-warning-50/30' : 'border-slate-100 bg-white'}`}>
+                                  <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-bold text-primary-900 text-sm">{d.name as string}</span>
+                                      <span className="text-[10px] text-slate-400">{d.phone as string}</span>
+                                    </div>
+                                    <span className={`tag-pill ${driverStatusColor[d.status as keyof typeof driverStatusColor]} text-[10px]`}>{driverStatusLabel[d.status as keyof typeof driverStatusLabel]}</span>
+                                  </div>
+                                  {trips.length === 0 ? (
+                                    <div className="text-[11px] text-success-600 flex items-center gap-1">
+                                      <CheckCircle2 className="w-3 h-3" /> 今日全天空闲
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-1.5">
+                                      {trips.slice(0, 4).map((trip: Record<string, unknown>, ti: number) => {
+                                        const tripStart = trip.startTime as string;
+                                        const tripEnd = trip.endTime as string;
+                                        const curStart = adjustStartTime ? new Date(adjustStartTime).getTime() : 0;
+                                        const curEnd = adjustEndTime ? new Date(adjustEndTime).getTime() : 0;
+                                        const ts = new Date(tripStart).getTime();
+                                        const te = new Date(tripEnd).getTime();
+                                        const conflict = ts < curEnd && te > curStart;
+                                        return (
+                                          <div key={ti} className={`text-[11px] p-2 rounded-lg flex items-center gap-2 ${conflict ? 'bg-warning-500/15 border border-warning-300/40 text-warning-800' : 'bg-slate-50 text-slate-600'}`}>
+                                            <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${conflict ? 'bg-warning-500' : 'bg-accent-400'}`} />
+                                            <span className="font-mono shrink-0">{tripStart.slice(11, 16)}-{tripEnd.slice(11, 16)}</span>
+                                            <span className="truncate flex-1">{trip.origin as string} → {trip.destination as string}</span>
+                                            {conflict && <span className="shrink-0 text-warning-700 font-semibold">冲突</span>}
+                                          </div>
+                                        );
+                                      })}
+                                      {trips.length > 4 && (
+                                        <div className="text-[10px] text-slate-400 text-center">还有 {trips.length - 4} 个任务...</div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
 
               {suggestion && selVehicleId != null && selDriverId != null && (

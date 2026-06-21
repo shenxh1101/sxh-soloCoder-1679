@@ -30,6 +30,8 @@ export default function SupervisorDashboard() {
   const [pending, setPending] = useState<ApprovalRow[]>([]);
   const [summary, setSummary] = useState({ pendingApprovals: 0, approved: 0, rejected: 0, total: 0 });
   const [budget, setBudget] = useState<Record<string, unknown> | null>(null);
+  const [deptBudgetInfo, setDeptBudgetInfo] = useState<Record<string, unknown> | null>(null);
+  const [budgetKpi, setBudgetKpi] = useState<Record<string, unknown> | null>(null);
   const [monthlyData, setMonthlyData] = useState<Array<{ label: string; value: number }>>([]);
   const [deptData, setDeptData] = useState<Array<{ label: string; value: number }>>([]);
 
@@ -65,6 +67,11 @@ export default function SupervisorDashboard() {
         }
         if (user?.departmentId) {
           try { setBudget(await api.budgets.get(user.departmentId) as unknown as Record<string, unknown> | null); } catch {}
+          try {
+            const ba = await api.finance.budgetAnalysis() as unknown as { list: Array<Record<string, unknown>>; kpi: Record<string, unknown> };
+            if (ba.list && ba.list.length > 0) setDeptBudgetInfo(ba.list[0]);
+            if (ba.kpi) setBudgetKpi(ba.kpi);
+          } catch {}
         }
         try {
           const monthlyRes = await api.finance.statistics({ type: 'monthly' }) as unknown as { data: Array<{ label: string; value: number }> };
@@ -103,29 +110,79 @@ export default function SupervisorDashboard() {
         ))}
       </div>
 
-      {budget && (
+      {deptBudgetInfo && (
         <div className="card bg-gradient-to-r from-primary-50 via-white to-warning-50">
           <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
             <div>
               <h3 className="text-base font-bold text-primary-800 flex items-center gap-2">
-                <DollarSign className="w-5 h-5 text-primary-600" /> {budget.departmentName as string} · 月度预算
+                <DollarSign className="w-5 h-5 text-primary-600" /> {deptBudgetInfo.departmentName as string} · 预算执行分析
               </h3>
-              <p className="text-xs text-slate-500 mt-1">当前预算周期：{budget.currentMonth as string}</p>
+              <p className="text-xs text-slate-500 mt-1">统计周期：{(budgetKpi?.targetMonth as string) || '本月'} · 数据与财务审核同步</p>
             </div>
-            <button onClick={() => navigate('/supervisor/budget')} className="btn-ghost text-xs">
-              配置预算 <ChevronRight className="w-3 h-3" />
-            </button>
+            <div className="flex items-center gap-2">
+              <span className={`tag-pill text-xs ${
+                deptBudgetInfo.riskLevel === 'overrun' ? 'bg-danger-500/15 text-danger-700' :
+                deptBudgetInfo.riskLevel === 'warning' ? 'bg-warning-500/15 text-warning-700' :
+                'bg-success-500/15 text-success-700'
+              }`}>
+                {deptBudgetInfo.riskLevel === 'overrun' ? '已超支' : deptBudgetInfo.riskLevel === 'warning' ? '风险预警' : '预算正常'}
+              </span>
+              <button onClick={() => navigate('/supervisor/budget')} className="btn-ghost text-xs">
+                详情 <ChevronRight className="w-3 h-3" />
+              </button>
+            </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-            <div className="p-4 rounded-xl bg-white shadow-sm"><div className="text-xs text-slate-500">月度预算</div><div className="text-2xl font-black text-primary-800 mt-1 font-mono">{formatMoney(budget.monthlyBudget as number)}</div></div>
-            <div className="p-4 rounded-xl bg-white shadow-sm"><div className="text-xs text-slate-500">已使用</div><div className="text-2xl font-black text-accent-700 mt-1 font-mono">{formatMoney(budget.usedBudget as number)}</div></div>
-            <div className="p-4 rounded-xl bg-white shadow-sm"><div className="text-xs text-slate-500">剩余预算</div><div className="text-2xl font-black text-success-600 mt-1 font-mono">{formatMoney((budget.remainingBudget as number) ?? 0)}</div></div>
-            <div className="p-4 rounded-xl bg-white shadow-sm"><div className="text-xs text-slate-500">使用率</div><div className={`text-2xl font-black mt-1 font-mono ${(budget.usagePercent as number) >= (budget.alertThreshold as number) ? 'text-danger-600' : 'text-primary-800'}`}>{(budget.usagePercent as number)?.toFixed(1)}%</div></div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+            <div className="p-4 rounded-xl bg-white shadow-sm">
+              <div className="text-xs text-slate-500">月度预算</div>
+              <div className="text-2xl font-black text-primary-800 mt-1 font-mono">{formatMoney(deptBudgetInfo.monthlyBudget as number)}</div>
+            </div>
+            <div className="p-4 rounded-xl bg-white shadow-sm">
+              <div className="text-xs text-slate-500 flex items-center gap-1">已审核费用 <span className="text-success-600">●</span></div>
+              <div className="text-2xl font-black text-success-600 mt-1 font-mono">{formatMoney(deptBudgetInfo.approvedCost as number)}</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">{deptBudgetInfo.approvedCount as number} 笔已通过</div>
+            </div>
+            <div className="p-4 rounded-xl bg-white shadow-sm">
+              <div className="text-xs text-slate-500 flex items-center gap-1">待审核风险 <span className="text-warning-500">●</span></div>
+              <div className="text-2xl font-black text-warning-600 mt-1 font-mono">{formatMoney(deptBudgetInfo.pendingCost as number)}</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">{deptBudgetInfo.pendingCount as number} 笔待审核</div>
+            </div>
+            <div className="p-4 rounded-xl bg-white shadow-sm">
+              <div className="text-xs text-slate-500">{(deptBudgetInfo.remainingBudget as number) > 0 ? '剩余预算' : '预计超支'}</div>
+              <div className={`text-2xl font-black mt-1 font-mono ${(deptBudgetInfo.remainingBudget as number) > 0 ? 'text-primary-800' : 'text-danger-600'}`}>
+                {formatMoney(Math.max(0, deptBudgetInfo.remainingBudget as number) || (deptBudgetInfo.estimatedOverrun as number))}
+              </div>
+              <div className="text-[10px] text-slate-400 mt-0.5">使用率 {(deptBudgetInfo.usagePercent as number)?.toFixed(1)}%</div>
+            </div>
           </div>
-          <div className="progress-bar h-3"><div className={`progress-fill h-full ${(budget.usagePercent as number) >= (budget.alertThreshold as number) ? 'bg-danger-500' : 'bg-gradient-to-r from-primary-500 to-accent-500'}`} style={{ width: `${Math.min(100, budget.usagePercent as number)}%` }} /></div>
-          {(budget.usagePercent as number) >= (budget.alertThreshold as number) && (
-            <div className="mt-3 p-2.5 rounded-lg bg-danger-500/10 border border-danger-500/20 text-xs text-danger-700 flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" /> 预算使用率已超过预警阈值 {budget.alertThreshold as number}%，请注意管控。
+          <div className="mb-2">
+            <div className="relative h-4 bg-slate-100 rounded-full overflow-hidden">
+              <div
+                className="absolute left-0 top-0 h-full bg-gradient-to-r from-success-500 to-success-400 transition-all"
+                style={{ width: `${deptBudgetInfo.approvedPercent as number}%` }}
+              />
+              <div
+                className="absolute top-0 h-full bg-gradient-to-r from-warning-400 to-warning-500 transition-all"
+                style={{ left: `${deptBudgetInfo.approvedPercent as number}%`, width: `${deptBudgetInfo.pendingPercent as number}%` }}
+              />
+              <div className="absolute top-0 h-full w-0.5 bg-danger-500/70" style={{ left: '80%' }} />
+              <div className="absolute top-0 h-full w-0.5 bg-danger-600" style={{ left: '100%' }} />
+            </div>
+            <div className="flex justify-between mt-2 text-[10px] text-slate-500">
+              <span>0%</span>
+              <span className="text-warning-600">预警线 80%</span>
+              <span>100%</span>
+            </div>
+          </div>
+          {deptBudgetInfo.riskLevel !== 'normal' && (
+            <div className={`mt-3 p-2.5 rounded-lg border text-xs flex items-start gap-2 ${
+              deptBudgetInfo.riskLevel === 'overrun' ? 'bg-danger-500/10 border-danger-500/20 text-danger-700' : 'bg-warning-500/10 border-warning-500/20 text-warning-700'
+            }`}>
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              {deptBudgetInfo.riskLevel === 'overrun'
+                ? `预算已超支 ${formatMoney(deptBudgetInfo.estimatedOverrun as number)}，待审核通过后将进一步扩大缺口，请严格管控费用。`
+                : `预算使用率已达 {(deptBudgetInfo.usagePercent as number)?.toFixed(1)}%，接近预警线，请注意控制后续用车支出。`
+              }
             </div>
           )}
         </div>

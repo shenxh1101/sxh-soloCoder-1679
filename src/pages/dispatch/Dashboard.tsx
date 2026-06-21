@@ -48,9 +48,9 @@ export default function DispatcherDashboard() {
   }, [setLoading]);
 
   const kpis = [
-    { t: '车辆总数', n: stats.vehicles.total || 0, s: `${stats.vehicles.in_use || 0}在途 ${stats.vehicles.idle || 0}空闲`, c: 'from-primary-400 to-primary-600', i: <Car className="w-6 h-6" />, go: '/dispatch/vehicles' },
-    { t: '保养预警', n: stats.maintenanceAlertCount || 0, s: '需关注', c: 'from-warning-400 to-warning-600', i: <AlertTriangle className="w-6 h-6" />, go: '/dispatch/maintenance' },
-    { t: '待派车申请', n: recentApps.length, s: '需紧急处理', c: 'from-accent-400 to-accent-600', i: <Clock className="w-6 h-6" />, go: '/dispatch/dispatch' },
+    { t: '车辆总数', n: stats.vehicles.total || 0, s: `${stats.vehicles.in_use || 0}在途 ${stats.vehicles.idle || 0}空闲`, c: 'from-primary-400 to-primary-600', i: <Car className="w-6 h-6" />, go: '/dispatcher/vehicles' },
+    { t: '保养预警', n: stats.maintenanceAlertCount || 0, s: '需关注', c: 'from-warning-400 to-warning-600', i: <AlertTriangle className="w-6 h-6" />, go: '/dispatcher/maintenance' },
+    { t: '待派车申请', n: recentApps.length, s: '需紧急处理', c: 'from-accent-400 to-accent-600', i: <Clock className="w-6 h-6" />, go: '/dispatcher/dispatch' },
     { t: '待审账单', n: stats.pendingBills || 0, s: '财务待处理', c: 'from-success-400 to-success-600', i: <FileCheck className="w-6 h-6" />, go: '/finance/bills' },
   ];
 
@@ -74,14 +74,14 @@ export default function DispatcherDashboard() {
         <div className="xl:col-span-2 card">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-base font-bold text-primary-800 flex items-center gap-2"><Clock className="w-5 h-5 text-warning-500" /> 待派车申请</h3>
-            <button onClick={() => navigate('/dispatch/dispatch')} className="text-xs text-primary-600 hover:text-primary-800 flex items-center gap-1 font-medium">查看全部 <ChevronRight className="w-3 h-3" /></button>
+            <button onClick={() => navigate('/dispatcher/dispatch')} className="text-xs text-primary-600 hover:text-primary-800 flex items-center gap-1 font-medium">查看全部 <ChevronRight className="w-3 h-3" /></button>
           </div>
           {recentApps.length === 0 ? (
             <div className="py-10 text-center text-sm text-slate-400">暂无待处理</div>
           ) : (
             <div className="space-y-3">
               {recentApps.slice(0, 5).map((a: Record<string, unknown>) => (
-                <div key={a.id as number} className="p-4 rounded-xl border border-slate-100 hover:border-accent-200 hover:bg-accent-50/30 cursor-pointer transition-all flex flex-wrap items-center gap-4" onClick={() => navigate('/dispatch/dispatch')}>
+                <div key={a.id as number} className="p-4 rounded-xl border border-slate-100 hover:border-accent-200 hover:bg-accent-50/30 cursor-pointer transition-all flex flex-wrap items-center gap-4" onClick={() => navigate('/dispatcher/dispatch')}>
                   <div className="w-10 h-10 rounded-xl bg-primary-100 text-primary-600 flex items-center justify-center shrink-0">
                     <Activity className="w-5 h-5" />
                   </div>
@@ -106,7 +106,7 @@ export default function DispatcherDashboard() {
         <div className="card">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-base font-bold text-primary-800 flex items-center gap-2"><AlertTriangle className="w-5 h-5 text-warning-500" /> 保养预警</h3>
-            <button onClick={() => navigate('/dispatch/maintenance')} className="text-xs text-primary-600 hover:text-primary-800 flex items-center gap-1 font-medium">查看全部 <ChevronRight className="w-3 h-3" /></button>
+            <button onClick={() => navigate('/dispatcher/maintenance')} className="text-xs text-primary-600 hover:text-primary-800 flex items-center gap-1 font-medium">查看全部 <ChevronRight className="w-3 h-3" /></button>
           </div>
           {maintenanceAlerts.length === 0 ? (
             <div className="py-8 text-center"><UserCheck className="w-12 h-12 mx-auto text-success-400 mb-2" /><p className="text-xs text-slate-400">全部车辆状态良好</p></div>
@@ -142,7 +142,7 @@ export default function DispatcherDashboard() {
         <div className="card">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-base font-bold text-primary-800 flex items-center gap-2"><Car className="w-5 h-5 text-primary-600" /> 车辆状态概览</h3>
-            <button onClick={() => navigate('/dispatch/vehicles')} className="text-xs text-primary-600 hover:text-primary-800 flex items-center gap-1 font-medium">管理 <ChevronRight className="w-3 h-3" /></button>
+            <button onClick={() => navigate('/dispatcher/vehicles')} className="text-xs text-primary-600 hover:text-primary-800 flex items-center gap-1 font-medium">管理 <ChevronRight className="w-3 h-3" /></button>
           </div>
           <div className="space-y-3">
             {(['idle', 'in_use', 'maintenance', 'repair'] as const).map((status) => {
@@ -164,7 +164,7 @@ export default function DispatcherDashboard() {
         <div className="card">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-base font-bold text-primary-800 flex items-center gap-2"><Users className="w-5 h-5 text-accent-500" /> 司机状态概览</h3>
-            <button onClick={() => navigate('/dispatch/drivers')} className="text-xs text-primary-600 hover:text-primary-800 flex items-center gap-1 font-medium">管理 <ChevronRight className="w-3 h-3" /></button>
+            <button onClick={() => navigate('/dispatcher/drivers')} className="text-xs text-primary-600 hover:text-primary-800 flex items-center gap-1 font-medium">管理 <ChevronRight className="w-3 h-3" /></button>
           </div>
           <div className="space-y-3">
             {driverList.length === 0 ? (

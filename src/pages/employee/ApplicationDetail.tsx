@@ -51,12 +51,22 @@ export default function ApplicationDetailPage() {
   const showRatingBtn = app.status === 'completed' && !rating;
   const tripId = trip?.id as number | undefined;
 
-  const steps: { label: string; done: boolean; active: boolean; color: string }[] = [
-    { label: '提交申请', done: true, active: false, color: 'bg-success-500' },
-    { label: '预算审批', done: ['approved', 'rejected', 'dispatched', 'in_progress', 'completed'].includes(app.status) || app.status === 'pending_approval' && (approval?.decision === 'approved' || approval?.decision === 'rejected'), active: app.status === 'pending_approval' && approval?.decision !== 'approved' && approval?.decision !== 'rejected', color: app.status === 'rejected' ? 'bg-danger-500' : 'bg-success-500' },
-    { label: '车辆派车', done: ['dispatched', 'in_progress', 'completed'].includes(app.status), active: app.status === 'pending' || app.status === 'approved', color: 'bg-primary-500' },
+  const overviewSteps = [
+    { label: '提交申请', done: true, color: 'bg-success-500' },
+    { label: '预算审批', done: !!approval, warn: approval?.decision === 'rejected', active: app.status === 'pending_approval' && !approval?.decision, color: approval?.decision === 'rejected' ? 'bg-danger-500' : 'bg-success-500' },
+    { label: '车辆派车', done: !!dispatch, active: ['approved', 'pending'].includes(app.status) && !dispatch, color: 'bg-primary-500' },
     { label: '行程进行', done: app.status === 'completed', active: app.status === 'in_progress', color: 'bg-accent-500' },
     { label: '完成结算', done: !!bill && (bill.auditStatus === 'approved' || bill.auditStatus === 'rejected'), active: app.status === 'completed' && (!bill || bill.auditStatus === 'pending'), color: 'bg-warning-500' },
+  ];
+
+  const timelineSteps = [
+    { key: 'submit', label: '提交申请', time: app.createdAt as string, done: true, icon: <FileCheck className="w-4 h-4" /> },
+    { key: 'approve', label: '主管审批', time: (approval?.decidedAt as string) || (approval?.createdAt as string), done: !!approval, warn: approval?.decision === 'rejected', active: app.status === 'pending_approval' && !approval?.decision, icon: <CheckCircle2 className="w-4 h-4" /> },
+    { key: 'dispatch', label: '派车完成', time: dispatch?.createdAt as string, done: !!dispatch, active: ['approved', 'pending'].includes(app.status) && !dispatch, icon: <Car className="w-4 h-4" /> },
+    { key: 'depart', label: '行程出发', time: trip?.actualDeparture as string, done: !!trip?.actualDeparture, active: app.status === 'dispatched' && !trip?.actualDeparture, icon: <MapPin className="w-4 h-4" /> },
+    { key: 'arrive', label: '行程到达', time: trip?.actualArrival as string, done: !!trip?.actualArrival, active: app.status === 'in_progress', icon: <MapPin className="w-4 h-4" /> },
+    { key: 'bill', label: '账单审核', time: bill?.auditedAt as string, done: bill?.auditStatus === 'approved' || bill?.auditStatus === 'rejected', warn: bill?.auditStatus === 'rejected', active: app.status === 'completed' && bill?.auditStatus === 'pending', icon: <DollarSign className="w-4 h-4" /> },
+    { key: 'rating', label: '服务评价', time: rating?.createdAt as string, done: !!rating, active: app.status === 'completed' && !rating && bill?.auditStatus === 'approved', icon: <Star className="w-4 h-4" /> },
   ];
 
   return (
@@ -82,7 +92,7 @@ export default function ApplicationDetailPage() {
         <div className="py-4 relative">
           <div className="absolute left-4 right-4 top-[22px] h-1 bg-slate-100 rounded" />
           <div className="flex justify-between relative">
-            {steps.map((s, i) => (
+            {overviewSteps.map((s, i) => (
               <div key={i} className="flex flex-col items-center gap-2 w-[20%] z-10">
                 <div className={`w-11 h-11 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-md ${s.done ? s.color : s.active ? 'bg-accent-500 animate-pulseRing' : 'bg-slate-200'}`}>
                   {s.done ? <CheckCircle2 className="w-5 h-5" /> : i + 1}
@@ -319,29 +329,42 @@ export default function ApplicationDetailPage() {
           )}
 
           <div className="card">
-            <h3 className="text-sm font-bold text-primary-800 mb-3">操作时间线</h3>
-            <div className="space-y-3 text-sm">
-              {[
-                ['提交申请', app.createdAt as string, true],
-                ['主管审批', approval?.decidedAt as string || approval?.createdAt as string, !!approval, approval?.decision === 'rejected'],
-                ['派车完成', dispatch?.createdAt as string, !!dispatch],
-                ['行程开始', trip?.actualDeparture as string, !!trip?.actualDeparture],
-                ['行程结束', trip?.actualArrival as string, !!trip?.actualArrival],
-                ['账单审核', bill?.auditedAt as string, bill?.auditStatus === 'approved' || bill?.auditStatus === 'rejected'],
-              ].map(([label, time, ok, warn], i) => (
-                ok && (
-                  <div key={i} className="flex gap-3">
-                    <div className="flex flex-col items-center">
-                      <div className={`w-3 h-3 rounded-full mt-1.5 ${warn ? 'bg-danger-500' : ok ? 'bg-success-500' : 'bg-slate-200'}`} />
-                      {i < 5 && <div className="w-px flex-1 bg-slate-100 my-0.5" />}
+            <h3 className="text-sm font-bold text-primary-800 mb-4 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-accent-500" /> 行程跟踪时间轴
+            </h3>
+            <div className="relative">
+              {timelineSteps.map((step, i) => {
+                const isLast = i === timelineSteps.length - 1;
+                return (
+                  <div key={step.key} className="flex gap-3 relative">
+                    <div className="flex flex-col items-center z-10">
+                      <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white shadow-sm flex-shrink-0 ${
+                        step.warn ? 'bg-danger-500' :
+                        step.done ? 'bg-success-500' :
+                        step.active ? 'bg-accent-500 animate-pulseRing' :
+                        'bg-slate-200'
+                      }`}>
+                        {step.done || step.active ? step.icon : <span className="text-xs font-bold text-slate-400">{i + 1}</span>}
+                      </div>
+                      {!isLast && (
+                        <div className={`w-0.5 flex-1 my-1 ${
+                          step.done ? 'bg-success-300' : 'bg-slate-100'
+                        }`} style={{ minHeight: '20px' }} />
+                      )}
                     </div>
-                    <div className="flex-1 pb-3">
-                      <div className="text-sm font-medium text-primary-800">{label as string}</div>
-                      <div className="text-xs text-slate-400">{formatDateTime(time as string)}</div>
+                    <div className={`flex-1 pb-5 ${step.done || step.active ? '' : 'opacity-50'}`}>
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="text-sm font-semibold text-primary-800">{step.label}</span>
+                        {step.active && <span className="tag-pill bg-accent-500/15 text-accent-600 text-[10px]">进行中</span>}
+                        {step.warn && <span className="tag-pill bg-danger-500/15 text-danger-600 text-[10px]">异常</span>}
+                      </div>
+                      <div className="text-xs text-slate-400">
+                        {step.done && step.time ? formatDateTime(step.time) : step.active ? '正在进行中...' : '等待中'}
+                      </div>
                     </div>
                   </div>
-                )
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>

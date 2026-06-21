@@ -103,6 +103,7 @@ export const api = {
   finance: {
     bills: (params?: Record<string, unknown>) => get<PaginatedResponse<Bill> & { kpi?: Record<string, number> }>('/finance/bills', params),
     billsSummary: (params?: Record<string, unknown>) => get<{ list: Array<Record<string, unknown>>; kpi?: Record<string, number> }>('/finance/bills/summary', params),
+    budgetAnalysis: (params?: Record<string, unknown>) => get<{ list: Array<Record<string, unknown>>; kpi: Record<string, number> }>('/finance/budget-analysis', params),
     audit: (id: number, data: { approved: boolean; comment?: string }) => post(`/finance/bills/${id}/audit`, data),
     statistics: (params?: Record<string, unknown>) => get<{ data: Array<{ label: string; value: number; color?: string }>; summary: { totalBills: number; totalCost: number; avgCost: number } }>('/finance/statistics', params),
   },

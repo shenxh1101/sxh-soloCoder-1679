@@ -3,7 +3,7 @@ import { api } from '../../lib/api.js';
 import { useAppStore, useToast } from '../../store/appStore.js';
 import { formatDateTime, formatMoney, formatDuration, billAuditStatusLabel, billAuditStatusColor, carTypeLabel } from '../../lib/format.js';
 import type { Bill, Department } from '../../../shared/types';
-import { Receipt, Search, Filter, CheckCircle2, XCircle, Clock, Eye, X, ChevronDown, TrendingUp, Users, Calendar, Car, Building2, ChevronRight, PieChart, LayoutGrid, Table2, ArrowRightLeft } from 'lucide-react';
+import { Receipt, Search, Filter, CheckCircle2, XCircle, Clock, Eye, X, ChevronDown, TrendingUp, Users, Calendar, Car, Building2, ChevronRight, PieChart, LayoutGrid, Table2, ArrowRightLeft, DollarSign, AlertTriangle } from 'lucide-react';
 
 type SummaryRow = { label: string; departmentId?: number | null; count: number; totalCost: number; avgCost: number; baseCost: number; mileageCost: number; overtimeCost: number; pendingCost: number; approvedCost: number };
 
@@ -20,11 +20,13 @@ export default function BillsPage() {
   const [departmentId, setDepartmentId] = useState<string>('');
   const [month, setMonth] = useState('');
   const [carType, setCarType] = useState('all');
-  const [view, setView] = useState<'table' | 'summary'>('table');
+  const [view, setView] = useState<'table' | 'summary' | 'budget'>('table');
   const [groupBy, setGroupBy] = useState<'department' | 'month' | 'carType'>('department');
   const [summary, setSummary] = useState<SummaryRow[]>([]);
   const [kpi, setKpi] = useState<Record<string, number>>({});
   const [summaryKpi, setSummaryKpi] = useState<Record<string, number>>({});
+  const [budgetList, setBudgetList] = useState<Array<Record<string, unknown>>>([]);
+  const [budgetKpi, setBudgetKpi] = useState<Record<string, unknown>>({});
   const [departments, setDepartments] = useState<Department[]>([]);
 
   const [auditBill, setAuditBill] = useState<Bill | null>(null);
@@ -85,6 +87,25 @@ export default function BillsPage() {
 
   useEffect(() => { load(); }, [page, status, departmentId, month, carType]);
   useEffect(() => { if (view === 'summary') loadSummary(); }, [view, groupBy, status, departmentId, month, carType]);
+  useEffect(() => { if (view === 'budget') loadBudget(); }, [view, month]);
+
+  const loadBudget = async () => {
+    try {
+      setLoading(true);
+      const params: Record<string, unknown> = {};
+      if (month) params.month = month;
+      const r = await api.finance.budgetAnalysis(params);
+      setBudgetList(r.list || []);
+      setBudgetKpi(r.kpi || {});
+    } catch (e) { toast.error((e as { message?: string }).message || '加载失败'); }
+    finally { setLoading(false); }
+  };
+
+  const drillBudgetToBills = (deptId: number, deptName: string) => {
+    setDepartmentId(String(deptId));
+    setView('table');
+    toast.success(`已切换到 ${deptName} 的账单明细`);
+  };
 
   const resetFilters = () => {
     setStatus('all'); setDepartmentId(''); setMonth(''); setCarType('all'); setPage(1);
@@ -112,6 +133,7 @@ export default function BillsPage() {
       setAuditBill(null); setComment('');
       load();
       if (view === 'summary') loadSummary();
+      if (view === 'budget') loadBudget();
     } catch (e) { toast.error((e as { message?: string }).message || '审核失败'); }
     finally { setSubmitting(false); }
   };
@@ -175,6 +197,9 @@ export default function BillsPage() {
             </button>
             <button onClick={() => { setView('summary'); }} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${view === 'summary' ? 'bg-primary-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-primary-50'}`}>
               <LayoutGrid className="w-3.5 h-3.5" /> 汇总视图
+            </button>
+            <button onClick={() => { setView('budget'); }} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${view === 'budget' ? 'bg-primary-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-primary-50'}`}>
+              <PieChart className="w-3.5 h-3.5" /> 预算分析
             </button>
             {view === 'summary' && (
               <div className="flex items-center gap-1 ml-2 rounded-lg bg-slate-100 p-1">
@@ -311,7 +336,7 @@ export default function BillsPage() {
             </div>
           )}
         </div>
-      ) : (
+      ) : view === 'summary' ? (
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             {[
@@ -389,6 +414,124 @@ export default function BillsPage() {
                         <span className="text-primary-600 flex items-center gap-0.5 group-hover:text-accent-600">
                           点击查看对应明细 <ArrowRightLeft className="w-3 h-3" />
                         </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            {[
+              { t: '部门总数', n: budgetKpi.totalDepartments ?? 0, c: 'from-primary-400 to-primary-600', i: <Building2 className="w-5 h-5" /> },
+              { t: '总预算', n: formatMoney(budgetKpi.totalBudget as number ?? 0), c: 'from-accent-400 to-accent-600', i: <DollarSign className="w-5 h-5" /> },
+              { t: '已使用', n: formatMoney(budgetKpi.totalUsedCost as number ?? 0), s: `占 ${(budgetKpi.overallUsagePercent as number ?? 0).toFixed(1)}%`, c: 'from-success-400 to-success-600', i: <TrendingUp className="w-5 h-5" /> },
+              { t: '超支部门', n: budgetKpi.overrunDepartments ?? 0, s: `预警 ${budgetKpi.warningDepartments ?? 0} 个`, c: 'from-danger-400 to-danger-600', i: <AlertTriangle className="w-5 h-5" /> },
+            ].map((k, i) => (
+              <div key={i} className="kpi-card">
+                <div className={`absolute top-0 right-0 w-28 h-28 opacity-10 bg-gradient-to-br ${k.c} rounded-full -translate-y-8 translate-x-10`} />
+                <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${k.c} text-white flex items-center justify-center shadow-md mb-3`}>{k.i}</div>
+                <div className="text-xl font-black text-primary-900 tracking-tight font-mono">{k.n as React.ReactNode}</div>
+                <div className="text-xs text-slate-500 mt-1">{k.t} {k.s && <span className="text-primary-600 font-medium ml-1">{k.s}</span>}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="card">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-bold text-primary-800 flex items-center gap-2">
+                <PieChart className="w-5 h-5 text-accent-500" /> 部门预算执行情况
+              </h3>
+              <span className="text-xs text-slate-500">{budgetKpi.targetMonth as string || '本月'}</span>
+            </div>
+            {budgetList.length === 0 ? (
+              <div className="py-16 text-center"><Building2 className="w-16 h-16 mx-auto text-slate-200 mb-3" /><p className="text-sm text-slate-400">暂无预算数据</p></div>
+            ) : (
+              <div className="space-y-3">
+                {budgetList.map((dept, i) => {
+                  const riskLevel = dept.riskLevel as string;
+                  const usedPct = dept.usagePercent as number;
+                  const approvedPct = dept.approvedPercent as number;
+                  const pendingPct = dept.pendingPercent as number;
+                  const isOverrun = riskLevel === 'overrun';
+                  const isWarning = riskLevel === 'warning';
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => drillBudgetToBills(dept.departmentId as number, dept.departmentName as string)}
+                      className="w-full text-left p-4 rounded-xl border-2 transition-all group bg-white hover:shadow-md"
+                      style={{ borderColor: isOverrun ? '#fecaca' : isWarning ? '#fef08a' : '#e2e8f0' }}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-11 h-11 rounded-xl text-white flex items-center justify-center shadow-md ${isOverrun ? 'bg-gradient-to-br from-danger-400 to-danger-600' : isWarning ? 'bg-gradient-to-br from-warning-400 to-warning-600' : 'bg-gradient-to-br from-primary-500 to-primary-700'}`}>
+                            <Building2 className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <div className="font-bold text-primary-900 flex items-center gap-2 text-base">
+                              {dept.departmentName as string}
+                              <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-primary-500 group-hover:translate-x-0.5 transition-all" />
+                            </div>
+                            <div className="text-xs text-slate-500 flex items-center gap-2">
+                              <span>月度预算：<b className="text-primary-700 font-mono">{formatMoney(dept.monthlyBudget as number)}</b></span>
+                              <span>·</span>
+                              <span>{dept.totalBills as number} 笔账单</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className={`text-2xl font-black font-mono ${isOverrun ? 'text-danger-600' : isWarning ? 'text-warning-600' : 'text-primary-800'}`}>
+                            {usedPct.toFixed(1)}%
+                          </div>
+                          <span className={`tag-pill text-[10px] ${isOverrun ? 'bg-danger-500/15 text-danger-600' : isWarning ? 'bg-warning-500/15 text-warning-600' : 'bg-success-500/15 text-success-600'}`}>
+                            {isOverrun ? '已超支' : isWarning ? '预警中' : '预算正常'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-3 mb-3">
+                        <div className="p-2.5 rounded-lg bg-success-50">
+                          <div className="text-[11px] text-success-600 mb-0.5">已审核</div>
+                          <div className="text-sm font-bold text-success-700 font-mono">{formatMoney(dept.approvedCost as number)}</div>
+                          <div className="text-[10px] text-success-500">{approvedPct.toFixed(1)}%</div>
+                        </div>
+                        <div className="p-2.5 rounded-lg bg-warning-50">
+                          <div className="text-[11px] text-warning-600 mb-0.5">待审核</div>
+                          <div className="text-sm font-bold text-warning-700 font-mono">{formatMoney(dept.pendingCost as number)}</div>
+                          <div className="text-[10px] text-warning-500">{pendingPct.toFixed(1)}%</div>
+                        </div>
+                        <div className={`p-2.5 rounded-lg ${isOverrun ? 'bg-danger-50' : 'bg-slate-50'}`}>
+                          <div className={`text-[11px] mb-0.5 ${isOverrun ? 'text-danger-600' : 'text-slate-500'}`}>
+                            {isOverrun ? '预计超支' : '剩余预算'}
+                          </div>
+                          <div className={`text-sm font-bold font-mono ${isOverrun ? 'text-danger-700' : 'text-slate-700'}`}>
+                            {formatMoney(isOverrun ? dept.estimatedOverrun as number : dept.remainingBudget as number)}
+                          </div>
+                          <div className={`text-[10px] ${isOverrun ? 'text-danger-500' : 'text-slate-400'}`}>
+                            {isOverrun ? `超 ${(usedPct - 100).toFixed(1)}%` : `${(100 - usedPct).toFixed(1)}% 可用`}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="relative h-2.5 rounded-full bg-slate-100 overflow-hidden">
+                        <div
+                          className="absolute left-0 top-0 h-full bg-gradient-to-r from-success-400 to-success-500 transition-all"
+                          style={{ width: `${Math.min(approvedPct, 100)}%` }}
+                        />
+                        <div
+                          className="absolute top-0 h-full bg-gradient-to-r from-warning-300 to-warning-400 transition-all"
+                          style={{ left: `${approvedPct}%`, width: `${Math.min(pendingPct, 100 - approvedPct)}%` }}
+                        />
+                        <div className="absolute top-0 h-full w-px bg-danger-500" style={{ left: '80%' }} />
+                        <div className="absolute top-0 h-full w-px bg-danger-600" style={{ left: '100%' }} />
+                      </div>
+                      <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                        <span>0%</span>
+                        <span className="text-warning-500">预警 80%</span>
+                        <span className="text-danger-500">预算线 100%</span>
                       </div>
                     </button>
                   );
